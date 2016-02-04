@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <limits>
+#include <fstream>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -21,6 +22,7 @@ int main( int argc, char *argv[] )
   double mean_off_duration = 5000.0;
   double buffer_size = numeric_limits<unsigned int>::max();
   unsigned int simulation_ticks = 1000000;
+  string datafilename;
 
   for ( int i = 1; i < argc; i++ ) {
     string arg( argv[ i ] );
@@ -66,12 +68,18 @@ int main( int argc, char *argv[] )
     } else if ( arg.substr( 0, 4 ) == "off=" ) {
       mean_off_duration = atof( arg.substr( 4 ).c_str() );
       fprintf( stderr, "Setting mean_off_duration to %f ms\n", mean_off_duration );
+    } else if ( arg.substr( 0, 5 ) == "time=" ) {
+      simulation_ticks = atoi( arg.substr( 5 ).c_str() ) * 1000;
+      fprintf( stderr, "Setting simulation_ticks to %f ms\n", mean_off_duration );
     } else if ( arg.substr( 0, 4 ) == "buf=" ) {
       if (arg.substr( 4 ) == "inf") {
         buffer_size = numeric_limits<unsigned int>::max();
       } else {
         buffer_size = atoi( arg.substr( 4 ).c_str() );
       }
+    } else if ( arg.substr( 0, 9 ) == "datafile=" ) {
+      datafilename = arg.substr( 9 );
+      fprintf( stderr, "Will write simulation data to %s\n", datafilename.c_str() );
     }
   }
 
@@ -100,6 +108,21 @@ int main( int argc, char *argv[] )
   printf( "normalized_score = %f\n", norm_score );
 
   printf( "Whiskers: %s\n", outcome.used_whiskers.str().c_str() );
+
+  if ( !datafilename.empty() ) {
+    ofstream datafile;
+    datafile.open( datafilename );
+    if ( datafile.is_open() ) {
+      if ( !outcome.simulation_results.DNA().SerializeToOstream( &datafile ) ) {
+        fprintf( stderr, "Could not serialize to file %s\n", datafilename.c_str() );
+      } else {
+        fprintf( stderr, "Wrote simulation data to file %s\n", datafilename.c_str() );
+      }
+    } else {
+      fprintf( stderr, "Could not open file %s\n", datafilename.c_str() );
+    }
+    datafile.close();
+  }
 
   return 0;
 }

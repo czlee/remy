@@ -77,7 +77,7 @@ AnswerBuffers::Outcome Evaluator::Outcome::DNA( void ) const
 
     for ( const auto & x : run.second ) {
       AnswerBuffers::SenderResults *results = tp_del->add_results();
-      results->set_throughput( x.first ); 
+      results->set_throughput( x.first );
       results->set_delay( x.second );
     }
   }
@@ -90,7 +90,8 @@ AnswerBuffers::Outcome Evaluator::Outcome::DNA( void ) const
 Evaluator::Outcome::Outcome( const AnswerBuffers::Outcome & dna )
   : score( dna.score() ),
     throughputs_delays(),
-    used_whiskers()
+    used_whiskers(),
+    simulation_results()
 {
   for ( const auto &x : dna.throughputs_delays() ) {
     vector< pair< double, double > > tp_del;
@@ -120,12 +121,16 @@ Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
   run_whiskers.reset_counts();
 
   /* run tests */
-  Evaluator::Outcome the_outcome;
+  Evaluator::Outcome the_outcome( run_whiskers );
+
   for ( auto &x : configs ) {
+    // TODO make this optional (save memory)
+    SimulationRunData & run_data = the_outcome.simulation_results.add_run_data( x );
+
     /* run once */
     Network<Rat, Rat> network1( Rat( run_whiskers, trace ), run_prng, x );
-    network1.run_simulation( ticks_to_run );
-    
+    network1.run_simulation( ticks_to_run, run_data );
+
     the_outcome.score += network1.senders().utility();
     the_outcome.throughputs_delays.emplace_back( x, network1.senders().throughputs_delays() );
   }
