@@ -228,6 +228,17 @@ vector< pair< double, double > > SenderGang<SenderType>::throughputs_delays( voi
 }
 
 template <class SenderType>
+vector< SenderDataPoint > SenderGang<SenderType>::statistics_for_log( void ) const
+{
+  vector < SenderDataPoint > points;
+  points.reserve( _gang.size() );
+  for ( auto &x : _gang ) {
+    points.push_back( x.utility.statistics_for_log() );
+  }
+  return points;
+}
+
+template <class SenderType>
 double SenderGang<SenderType>::SwitchedSender::next_event_time( const double & tickno ) const
 {
   assert( next_switch_tick >= tickno );

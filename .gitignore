@@ -33,6 +33,7 @@ Makefile.in
 /protobufs/simulationresults.pb.h
 /src/configuration
 /src/inspect-config
+/src/inspect-simulationsdata
 /src/rat-runner
 /src/remy
 /src/scoring-example

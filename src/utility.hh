@@ -2,6 +2,7 @@
 #define UTILITY_HH
 
 #include <cmath>
+#include "senderdatapoint.hh"
 
 class Utility
 {
@@ -21,6 +22,11 @@ public:
       assert( x.tick_received >= x.tick_sent );
       _total_delay += x.tick_received - x.tick_sent;
     }
+  }
+
+  SenderDataPoint statistics_for_log( void ) const {
+    return SenderDataPoint( average_throughput(), average_delay(),
+        _tick_share_sending, _packets_received, _total_delay );
   }
 
   double average_throughput( void ) const

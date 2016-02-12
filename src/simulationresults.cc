@@ -1,5 +1,3 @@
-
-#include <iostream>
 #include "simulationresults.hh"
 
 SimulationRunData & SimulationResults::add_run_data( const NetConfig & config )
@@ -15,11 +13,9 @@ SimulationRunDataPoint & SimulationRunData::add_datum( double seconds )
   return data.back();
 }
 
-void SimulationRunDataPoint::add_sender_data( std::vector< std::pair < double, double > > sender_throughputs_delays )
+void SimulationRunDataPoint::add_sender_data( std::vector< SenderDataPoint > new_data )
 {
-  for ( std::pair < double, double > & input_data : sender_throughputs_delays ) {
-    sender_data.push_back( {input_data.first, input_data.second} );
-  }
+  sender_data.insert( sender_data.end(), new_data.begin(), new_data.end() );
 }
 
 SimulationResultBuffers::SimulationsData SimulationResults::DNA( void ) const
@@ -36,7 +32,6 @@ SimulationResultBuffers::SimulationsData SimulationResults::DNA( void ) const
   for ( const auto &run : run_data ) {
     SimulationResultBuffers::SimulationRunData * run_data_pb = ret.add_run_data();
     run_data_pb->mutable_config()->CopyFrom( run.config.DNA() );
-    std::cerr << "There are " << run.data.size() << " data points." << std::endl;
 
     for ( const auto &datum : run.data ) {
       SimulationResultBuffers::SimulationRunDataPoint * data_pb = run_data_pb->add_point();
@@ -44,8 +39,7 @@ SimulationResultBuffers::SimulationsData SimulationResults::DNA( void ) const
 
       for (const auto &sender_datum : datum.sender_data ) {
         SimulationResultBuffers::SenderDataPoint * sender_data_pb = data_pb->add_sender_data();
-        sender_data_pb->set_average_throughput_since_start( sender_datum.average_throughput_since_start );
-        sender_data_pb->set_average_delay_since_start( sender_datum.average_delay_since_start );
+        sender_data_pb->CopyFrom( sender_datum.DNA() );
       }
     }
   }

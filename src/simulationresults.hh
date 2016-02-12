@@ -4,12 +4,12 @@
 #include "network.hh"
 #include "whiskertree.hh"
 #include "simulationresults.pb.h"
+#include "senderdatapoint.hh"
 #include <vector>
 
 class SimulationResults;
-struct SimulationRunData;
-struct SimulationRunDataPoint;
-struct SenderDataPoint;
+class SimulationRunData;
+class SimulationRunDataPoint;
 
 // top level results class
 class SimulationResults
@@ -55,25 +55,11 @@ public:
   SimulationRunDataPoint( double seconds ) : seconds( seconds ), sender_data() {};
 
   // expects pairs of < throughput, delay >
-  void add_sender_data( std::vector< std::pair< double, double> > );
+  void add_sender_data( std::vector< SenderDataPoint > );
 
 private:
   double seconds;
-  std::vector< struct SenderDataPoint > sender_data;
-};
-
-class SenderDataPoint
-{
-  friend SimulationResultBuffers::SimulationsData SimulationResults::DNA ( void ) const;
-
-public:
-  SenderDataPoint( double average_throughput_since_start, double average_delay_since_start ) :
-    average_throughput_since_start( average_throughput_since_start ),
-    average_delay_since_start( average_delay_since_start ) {};
-
-private:
-  double average_throughput_since_start = 0;
-  double average_delay_since_start = 0;
+  std::vector< SenderDataPoint > sender_data;
 };
 
 #endif // SIMULATIONRESULTS_HH
