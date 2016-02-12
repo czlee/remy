@@ -42,7 +42,7 @@ void Network<SenderType1, SenderType2>::tick( void )
 
 template <class SenderType1, class SenderType2>
 void Network<SenderType1, SenderType2>::run_simulation( const double & duration,
-                                                        SimulationRunData & run_data,
+                                                        SimulationRunData * run_data,
                                                         const double interval )
 {
   assert( _tickno == 0 );
@@ -55,8 +55,8 @@ void Network<SenderType1, SenderType2>::run_simulation( const double & duration,
 		   min( _delay.next_event_time( _tickno ),
 			_rec.next_event_time( _tickno ) ) );
 
-    if ( _tickno > next_log_time ) {
-      SimulationRunDataPoint & datum = run_data.add_datum( _tickno / 1000.0 );
+    if ( run_data != NULL && _tickno > next_log_time ) {
+      SimulationRunDataPoint & datum = run_data->add_datum( _tickno / 1000.0 );
       datum.add_sender_data( _senders.throughputs_delays() );
       next_log_time += interval;
     }

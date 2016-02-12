@@ -86,7 +86,7 @@ public:
 
   Network( const SenderType1 & example_sender1, PRNG & s_prng, const NetConfig & config );
 
-  void run_simulation( const double & duration, SimulationRunData & run_data = NULL, const double interval = 1000 );
+  void run_simulation( const double & duration, SimulationRunData * run_data = NULL, const double interval = 1000 );
 
   const SenderGangofGangs<SenderType1,SenderType2> & senders( void ) const { return _senders; }
 };

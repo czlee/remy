@@ -20,8 +20,9 @@ int main( int argc, char *argv[] )
   double delay = 100.0;
   double mean_on_duration = 5000.0;
   double mean_off_duration = 5000.0;
-  double buffer_size = numeric_limits<unsigned int>::max();
   unsigned int simulation_ticks = 1000000;
+  double simulation_log_interval_ticks = 1000;
+  double buffer_size = numeric_limits<unsigned int>::max();
   string datafilename;
 
   for ( int i = 1; i < argc; i++ ) {
@@ -70,7 +71,10 @@ int main( int argc, char *argv[] )
       fprintf( stderr, "Setting mean_off_duration to %f ms\n", mean_off_duration );
     } else if ( arg.substr( 0, 5 ) == "time=" ) {
       simulation_ticks = atoi( arg.substr( 5 ).c_str() ) * 1000;
-      fprintf( stderr, "Setting simulation_ticks to %f ms\n", mean_off_duration );
+      fprintf( stderr, "Setting simulation_ticks to %u ms\n", simulation_ticks );
+    } else if ( arg.substr( 0, 9 ) == "interval=" ) {
+      simulation_log_interval_ticks = atoi( arg.substr( 9 ).c_str() ) * 1000;
+      fprintf( stderr, "Setting simulation_log_interval_ticks to %f ms\n", simulation_log_interval_ticks );
     } else if ( arg.substr( 0, 4 ) == "buf=" ) {
       if (arg.substr( 4 ) == "inf") {
         buffer_size = numeric_limits<unsigned int>::max();
@@ -91,9 +95,10 @@ int main( int argc, char *argv[] )
   configuration_range.mean_off_duration = Range( mean_off_duration, mean_off_duration, 0 );
   configuration_range.buffer_size = Range( buffer_size, buffer_size, 0 );
   configuration_range.simulation_ticks = simulation_ticks;
+  configuration_range.simulation_log_interval_ticks = simulation_log_interval_ticks;
 
   Evaluator eval( configuration_range );
-  auto outcome = eval.score( whiskers, false, 10 );
+  auto outcome = eval.score( whiskers, false, 1, !datafilename.empty() );
   printf( "score = %f\n", outcome.score );
   double norm_score = 0;
 

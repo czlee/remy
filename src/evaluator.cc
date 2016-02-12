@@ -10,6 +10,7 @@
 Evaluator::Evaluator( const ConfigRange & range )
   : _prng_seed( global_PRNG()() ), /* freeze the PRNG seed for the life of this Evaluator */
     _tick_count( range.simulation_ticks ),
+    _log_interval_ticks( range.simulation_log_interval_ticks ),
     _configs()
 {
   // add configs from every point in the cube of configs
@@ -104,9 +105,9 @@ Evaluator::Outcome::Outcome( const AnswerBuffers::Outcome & dna )
 }
 
 Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
-				     const bool trace, const double carefulness ) const
+				     const bool trace, const double carefulness, const bool log_simulation ) const
 {
-  return score( run_whiskers, _prng_seed, _configs, trace, _tick_count * carefulness );
+  return score( run_whiskers, _prng_seed, _configs, trace, _tick_count * carefulness, _log_interval_ticks, log_simulation );
 }
 
 
@@ -114,7 +115,9 @@ Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
 				     const unsigned int prng_seed,
 				     const vector<NetConfig> & configs,
 				     const bool trace,
-				     const unsigned int ticks_to_run )
+				     const unsigned int ticks_to_run,
+             const double log_interval_ticks,
+             const bool log_simulation )
 {
   PRNG run_prng( prng_seed );
 
@@ -124,12 +127,12 @@ Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
   Evaluator::Outcome the_outcome( run_whiskers );
 
   for ( auto &x : configs ) {
-    // TODO make this optional (save memory)
-    SimulationRunData & run_data = the_outcome.simulation_results.add_run_data( x );
+    SimulationRunData * run_data = (log_simulation) ?
+        &(the_outcome.simulation_results.add_run_data( x )) : NULL;
 
     /* run once */
     Network<Rat, Rat> network1( Rat( run_whiskers, trace ), run_prng, x );
-    network1.run_simulation( ticks_to_run, run_data );
+    network1.run_simulation( ticks_to_run, run_data, log_interval_ticks );
 
     the_outcome.score += network1.senders().utility();
     the_outcome.throughputs_delays.emplace_back( x, network1.senders().throughputs_delays() );
