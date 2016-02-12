@@ -35,6 +35,7 @@ private:
 
   public:
     double next_event_time( const double & tickno ) const;
+    SenderDataPoint statistics_for_log( void ) const;
     Utility utility;
     bool sending;
     unsigned int id;

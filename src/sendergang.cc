@@ -153,7 +153,7 @@ void SenderGang<SenderType>::SwitchedSender::receive_feedback( Receiver & rec )
   if ( rec.readable( id ) ) {
     const std::vector< Packet > & packets = rec.packets_for( id );
 
-    utility.packets_received( packets );
+    utility.add_packets_received( packets );
     sender.packets_received( packets );
 
     rec.clear( id );
@@ -228,12 +228,20 @@ vector< pair< double, double > > SenderGang<SenderType>::throughputs_delays( voi
 }
 
 template <class SenderType>
+SenderDataPoint SenderGang<SenderType>::SwitchedSender::statistics_for_log( void ) const
+{
+  return SenderDataPoint( utility.average_throughput(), utility.average_delay(),
+      utility.tick_share_sending(), utility.packets_received(), utility.total_delay(),
+      sender.window_size(), sender.intersend_time() );
+}
+
+template <class SenderType>
 vector< SenderDataPoint > SenderGang<SenderType>::statistics_for_log( void ) const
 {
   vector < SenderDataPoint > points;
   points.reserve( _gang.size() );
   for ( auto &x : _gang ) {
-    points.push_back( x.utility.statistics_for_log() );
+    points.push_back( x.statistics_for_log() );
   }
   return points;
 }
