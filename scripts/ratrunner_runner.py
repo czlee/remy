@@ -12,10 +12,11 @@ class RatRunnerRunner:
     general_default_parameters = {
         'nsenders': 2,
         'link_ppt': 1.0,
-        'delay': 100.0,
+        'delay': 150.0,
         'mean_on': 5000.0,
         'mean_off': 5000.0,
         'buffer_size': 'inf',
+        'interval': 1.0,
     }
 
     ratrunner_parameters = [
@@ -26,6 +27,7 @@ class RatRunnerRunner:
         ("on", "mean_on"),
         ("off", "mean_off"),
         ("buf", "buffer_size"),
+        ("interval", "interval"),
     ]
 
     def __init__(self, **kwargs):
@@ -73,7 +75,7 @@ class RatRunnerRunner:
         if outfile_was_str:
             outfile.close()
 
-    def run(self, remyccfilename, parameters, outfile=None):
+    def run(self, remyccfilename, parameters={}, outfile=None, datafile=None):
         """Runs rat-runner with the given parameters and returns the output
         (from both stdout and stderr).
 
@@ -85,8 +87,10 @@ class RatRunnerRunner:
         """
         parameters = self._get_parameters(parameters)
         command = [self.ratrunnercmd, "if={:s}".format(remyccfilename)]
-        command += ["{}:{}".format(rroptname, parameters[paramname]) for rroptname, paramname in
+        command += ["{}={}".format(rroptname, parameters[paramname]) for rroptname, paramname in
                 self.ratrunner_parameters]
+        if datafile:
+            command.append("datafile={}".format(datafile))
         output = subprocess.check_output(command, stderr=subprocess.STDOUT)
         output = output.decode()
         self._write_to_file(command, output, outfile)

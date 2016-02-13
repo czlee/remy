@@ -23,59 +23,10 @@ from ratrunner_runner import RatRunnerRunner
 
 use_color = True
 DEFAULT_RESULTS_DIR = "results"
+LAST_RESULTS_SYMLINK = "last"
 
-HLINE1 = "-" * 80 + "\n"
-ROOTDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RATRUNNERCMD = os.path.join(ROOTDIR, "src", "rat-runner")
-SENDER_REGEX = re.compile("^sender: \[tp=(-?\d+(?:\.\d+)?), del=(-?\d+(?:\.\d+)?)\]$", re.MULTILINE)
-NORM_SCORE_REGEX = re.compile("^normalized_score = (-?\d+(?:\.\d+)?)$", re.MULTILINE)
-LINK_PPT_PRIOR_REGEX = re.compile("^link_packets_per_ms\s+\{\n\s+low: (-?\d+(?:\.\d+)?)\n\s+high: (-?\d+(?:\.\d+)?)$", re.MULTILINE)
 REMYCCSPEC_REGEX = re.compile("^([\w/]+)\.\{(\d+)\:(\d+)(?:\:(\d+))?\}$")
-NORM_SCORE_GROUP = 1
 LINK_PPT_TO_MBPS_CONVERSION = 10
-
-def print_command(command):
-    message = "$ " + " ".join(command)
-    if use_color:
-        message = "\033[1;36m" + message + "\033[0m"
-    print(message)
-
-def parse_ratrunner_output(result):
-    """Parses the output of rat-runner to extract the normalized score, and
-    sender throughputs and delays. Returns a 3-tuple. The first element is the
-    normalized score from the rat-runnner script. The second element is a list
-    of lists, one list for each sender, each inner list having two elements,
-    [throughput, delay]. The third element is a list [low, high], being
-    the link rate range under "prior assumptions"."""
-
-    norm_matches = NORM_SCORE_REGEX.findall(result)
-    if len(norm_matches) != 1:
-        print(result)
-        raise RuntimeError("Found no or duplicate normalized scores in this output.")
-    norm_score = float(norm_matches[0])
-
-    sender_matches = SENDER_REGEX.findall(result)
-    sender_data = [map(float, x) for x in sender_matches] # [[throughput, delay], [throughput, delay], ...]
-    if len(sender_data) == 0:
-        print(result)
-        warn("No senders found in this output.")
-
-    link_ppt_prior_matches = LINK_PPT_PRIOR_REGEX.findall(result)
-    if len(link_ppt_prior_matches) != 1:
-        print(result)
-        raise RuntimeError("Found no or duplicate link packets per ms prior assumptions in this output.")
-    link_ppt_prior = tuple(map(float, link_ppt_prior_matches[0]))
-
-    # Divide norm_score the number of senders (rat-runner returns the sum)
-    norm_score /= len(sender_data)
-
-    return norm_score, sender_data, link_ppt_prior
-
-def add_plot(axes, link_speeds, norm_scores, **kwargs):
-    """Adds a plot for the given link-packets-per-ms `link_ppts` and normalized
-    scores `norm_scores` to the `axes`."""
-    return plt.semilogx(link_speeds, norm_scores, axes=axes, **kwargs)
-
 
 class BaseRemyCCPerformancePlotGenerator:
     """Base class for generating and plotting data for a RemyCC.
@@ -93,6 +44,10 @@ class BaseRemyCCPerformancePlotGenerator:
         generators.
     """
 
+    SENDER_REGEX = re.compile("^sender: \[tp=(-?\d+(?:\.\d+)?), del=(-?\d+(?:\.\d+)?)\]$", re.MULTILINE)
+    NORM_SCORE_REGEX = re.compile("^normalized_score = (-?\d+(?:\.\d+)?)$", re.MULTILINE)
+    LINK_PPT_PRIOR_REGEX = re.compile("^link_packets_per_ms\s+\{\n\s+low: (-?\d+(?:\.\d+)?)\n\s+high: (-?\d+(?:\.\d+)?)$", re.MULTILINE)
+
     def __init__(self, link_ppt_range, **kwargs):
         self.link_ppt_range = link_ppt_range
         self.data_dir = kwargs.pop("data_dir", None)
@@ -105,6 +60,13 @@ class BaseRemyCCPerformancePlotGenerator:
             raise TypeError("Unrecognized arguments: " + ", ".join(kwargs.keys()))
 
     def get_statistics(self, remyccfilename, link_ppt):
+        """Must be implemented by subclasses. Should, for the given RemyCC and
+        link speed, return a 3-tuple `(norm_score, sender_data,
+        link_ppt_prior)`, where `norm_score` is the normalized score,
+        `sender_data` is a list of `[throughput, delay] lists, and
+        `link_ppt_prior` is a 2-tuple `(low, high)` being the link speed range
+        on which the RemyCC was trained.
+        """
         raise NotImplementedError("subclasses of BaseRemyCCPerformancePlotGenerator must implement get_statistics")
 
     def get_data_file(self, remyccfilename):
@@ -144,6 +106,38 @@ class BaseRemyCCPerformancePlotGenerator:
 
         print("\033[KDone file {}.".format(remyccfilename), file=sys.stderr)
         sys.stderr.flush()
+
+    @classmethod
+    def parse_ratrunner_output(cls, result):
+        """Parses the output of rat-runner to extract the normalized score, and
+        sender throughputs and delays. Returns a 3-tuple. The first element is the
+        normalized score from the rat-runnner script. The second element is a list
+        of lists, one list for each sender, each inner list having two elements,
+        [throughput, delay]. The third element is a list [low, high], being
+        the link rate range under "prior assumptions"."""
+
+        norm_matches = cls.NORM_SCORE_REGEX.findall(result)
+        if len(norm_matches) != 1:
+            print(result)
+            raise RuntimeError("Found no or duplicate normalized scores in this output.")
+        norm_score = float(norm_matches[0])
+
+        sender_matches = cls.SENDER_REGEX.findall(result)
+        sender_data = [map(float, x) for x in sender_matches] # [[throughput, delay], [throughput, delay], ...]
+        if len(sender_data) == 0:
+            print(result)
+            warn("No senders found in this output.")
+
+        link_ppt_prior_matches = cls.LINK_PPT_PRIOR_REGEX.findall(result)
+        if len(link_ppt_prior_matches) != 1:
+            print(result)
+            raise RuntimeError("Found no or duplicate link packets per ms prior assumptions in this output.")
+        link_ppt_prior = tuple(map(float, link_ppt_prior_matches[0]))
+
+        # Divide norm_score the number of senders (rat-runner returns the sum)
+        norm_score /= len(sender_data)
+
+        return norm_score, sender_data, link_ppt_prior
 
     def _update_link_ppt_prior(self, link_ppt_prior):
         if link_ppt_prior in self._link_ppt_priors:
@@ -192,7 +186,7 @@ class RatRunnerRemyCCPerformancePlotGenerator(RatRunnerFilesMixin, BaseRemyCCPer
         """
         outfile = self.get_console_filename(remyccfilename, link_ppt)
         output = self.ratrunner.run(remyccfilename, {'link_ppt': link_ppt}, outfile=outfile)
-        return parse_ratrunner_output(output)
+        return self.parse_ratrunner_output(output)
 
 
 class OutputsDirectoryRemyCCPerformancePlotGenerator(RatRunnerFilesMixin, BaseRemyCCPerformancePlotGenerator):
@@ -213,8 +207,13 @@ class OutputsDirectoryRemyCCPerformancePlotGenerator(RatRunnerFilesMixin, BaseRe
         f = open(filename, "r")
         contents = f.read()
         f.close()
-        return parse_ratrunner_output(contents)
+        return self.parse_ratrunner_output(contents)
 
+
+def add_plot(axes, link_speeds, norm_scores, **kwargs):
+    """Adds a plot for the given link-packets-per-ms `link_ppts` and normalized
+    scores `norm_scores` to the `axes`."""
+    return plt.semilogx(link_speeds, norm_scores, axes=axes, **kwargs)
 
 def process_replot_argument(replot_dir, results_dir):
     """Reads the args.json file in a results directory, copies it to an
@@ -266,15 +265,14 @@ def log_arguments(argsfile, args):
     json.dump(jsondict, argsfile, indent=2, sort_keys=True)
 
 def make_results_dir(dirname):
-    """Makes a results directory with the given name and directs 'last' symlink to it."""
+    """Makes a results directory with the given name and directs symlink to it."""
 
     if dirname is None:
         dirname = os.path.join(DEFAULT_RESULTS_DIR, "results" + time.strftime("%Y%m%d-%H%M%S"))
-    if os.path.islink("last"):
-        os.unlink("last")
-    os.symlink(dirname, "last")
-    if not os.path.exists(dirname):
-        os.makedirs(dirname, exist_ok=True)
+    if os.path.islink(LAST_RESULTS_SYMLINK):
+        os.unlink(LAST_RESULTS_SYMLINK)
+    os.symlink(dirname, LAST_RESULTS_SYMLINK)
+    os.makedirs(dirname, exist_ok=True)
     return dirname
 
 def generate_remyccs_list(specs):
@@ -311,26 +309,25 @@ parser.add_argument("-R", "--replot", type=str, action="append", default=[],
     help="Replot results in this directory from output files (can be specified multiple times)")
 parser.add_argument("-n", "--num-points", type=int, default=1000,
     help="Number of points to plot")
-parser.add_argument("-s", "--nsenders", type=int, default=2,
-    help="Number of senders")
 parser.add_argument("-l", "--link-ppt", type=float, default=[0.1, 100.0], nargs=2, metavar="PPMS",
     help="Link packets per millisecond, range to test, first argument is low, second is high")
-parser.add_argument("-d", "--delay", type=float, default=150.0,
-    help="Delay (milliseconds)")
-parser.add_argument("-q", "--mean-on", type=float, default=1000.0,
-    help="Mean on duration (milliseconds)")
-parser.add_argument("-w", "--mean-off", type=float, default=1000.0,
-    help="Mean off duration (milliseconds)")
-parser.add_argument("-b", "--buffer", type=str, default="inf",
-    help="Buffer size, a number or 'inf' for infinite buffers")
-parser.add_argument("--dry-run", action="store_true", default=False,
-    help="Print commands, don't run them.")
-parser.add_argument("-r", "--results-dir", type=str, default=None,
+parser.add_argument("-O", "--results-dir", type=str, default=None,
     help="Directory to place output files in.")
 parser.add_argument("--no-console-output-files", action="store_false", default=True, dest="console_output_files",
     help="Don't generate console output files")
 parser.add_argument("--originals", type=str, default="originals",
     help="Directory in which to look for original data files to add to plot.")
+ratrunner_group = parser.add_argument_group("rat-runner arguments")
+ratrunner_group.add_argument("-s", "--nsenders", type=int, default=2,
+    help="Number of senders")
+ratrunner_group.add_argument("-d", "--delay", type=float, default=150.0,
+    help="Delay (milliseconds)")
+ratrunner_group.add_argument("-q", "--mean-on", type=float, default=1000.0,
+    help="Mean on duration (milliseconds)")
+ratrunner_group.add_argument("-w", "--mean-off", type=float, default=1000.0,
+    help="Mean off duration (milliseconds)")
+ratrunner_group.add_argument("-b", "--buffer-size", type=str, default="inf",
+    help="Buffer size, a number or 'inf' for infinite buffers")
 args = parser.parse_args()
 
 # Sanity-check arguments, warn user say they can stop things early
@@ -359,9 +356,8 @@ args_file.close()
 
 # Generate parameters
 link_ppt_range = np.logspace(np.log10(args.link_ppt[0]), np.log10(args.link_ppt[1]), args.num_points)
-parameter_keys = ["nsenders", "delay", "mean_on", "mean_off"]
+parameter_keys = ["nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
 parameters = {key: getattr(args, key) for key in parameter_keys}
-
 remyccfiles = generate_remyccs_list(args.remycc)
 
 ax = plt.axes()
@@ -382,7 +378,7 @@ for replot_dir in args.replot:
         generator.generate(remycc)
     link_ppt_priors = generator.get_link_ppt_priors()
 
-# Add the remaining plots
+# Generate original plots
 if os.path.isdir(args.originals):
     for filename in os.listdir(args.originals):
         path = os.path.join(args.originals, filename)
