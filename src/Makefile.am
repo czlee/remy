@@ -13,10 +13,11 @@ common_source = delay.hh evaluator.cc evaluator.hh                     \
         sendergangofgangs.cc sendergangofgangs.hh                      \
 	utility.hh whisker.cc whisker.hh whiskertree.cc whiskertree.hh \
 	aimd-templates.cc aimd.cc aimd.hh                              \
-        configrange.hh configrange.cc
+        configrange.hh configrange.cc                                  \
+        fish.hh fish.cc
 
 
-remy_SOURCES = $(common_source) remy.cc ratbreeder.cc ratbreeder.hh 
+remy_SOURCES = $(common_source) remy.cc ratbreeder.cc ratbreeder.hh
 
 rat_runner_SOURCES = $(common_source) rat-runner.cc
 
