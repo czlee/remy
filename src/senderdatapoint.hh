@@ -2,6 +2,8 @@
 #define SENDER_DATA_POINT_HH
 
 #include "simulationresults.pb.h"
+#include "dna.pb.h"
+#include "memory.hh"
 
 /**
  * Represents the data that is logged relating to a single sender at a single
@@ -22,12 +24,14 @@ public:
     ret.set_total_delay( total_delay );
     ret.set_window_size( window_size );
     ret.set_intersend_time( intersend_time );
+    ret.mutable_memory()->CopyFrom( memory.DNA() );
     return ret;
   }
 
-  SenderDataPoint( double average_throughput, double average_delay, double sending_duration,
-      unsigned int packets_received, double total_delay, unsigned int window_size,
-      double intersend_time ) :
+  SenderDataPoint( Memory memory, double average_throughput, double average_delay,
+      double sending_duration, unsigned int packets_received, double total_delay,
+      unsigned int window_size, double intersend_time ) :
+    memory( memory ),
     average_throughput( average_throughput ),
     average_delay( average_delay ),
     sending_duration( sending_duration ),
@@ -37,6 +41,7 @@ public:
     intersend_time( intersend_time ) {};
 
 private:
+  Memory memory;
   double average_throughput = 0;
   double average_delay = 0;
   double sending_duration = 0;

@@ -230,9 +230,16 @@ vector< pair< double, double > > SenderGang<SenderType>::throughputs_delays( voi
 template <class SenderType>
 SenderDataPoint SenderGang<SenderType>::SwitchedSender::statistics_for_log( void ) const
 {
-  return SenderDataPoint( utility.average_throughput(), utility.average_delay(),
-      utility.tick_share_sending(), utility.packets_received(), utility.total_delay(),
-      sender.window_size(), sender.intersend_time() );
+  return SenderDataPoint(
+    sender.memory(),
+    utility.average_throughput(),
+    utility.average_delay(),
+    utility.tick_share_sending(),
+    utility.packets_received(),
+    utility.total_delay(),
+    sender.window_size(),
+    sender.intersend_time()
+  );
 }
 
 template <class SenderType>
