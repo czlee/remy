@@ -27,6 +27,7 @@ SimulationResultBuffers::SimulationsData SimulationResults::DNA( void ) const
   ProblemBuffers::ProblemSettings settings;
   settings.set_prng_seed( prng_seed );
   settings.set_tick_count( tick_count );
+  settings.set_log_interval_ticks( log_interval_ticks );
   ret.mutable_settings()->CopyFrom( settings );
 
   for ( const auto &run : run_data ) {

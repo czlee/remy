@@ -126,6 +126,12 @@ Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
   /* run tests */
   Evaluator::Outcome the_outcome( run_whiskers );
 
+  if ( log_simulation ) {
+    the_outcome.simulation_results.set_prng_seed( prng_seed );
+    the_outcome.simulation_results.set_tick_count( ticks_to_run );
+    the_outcome.simulation_results.set_log_interval_ticks( log_interval_ticks );
+  }
+
   for ( auto &x : configs ) {
     SimulationRunData * run_data = (log_simulation) ?
         &(the_outcome.simulation_results.add_run_data( x )) : NULL;
