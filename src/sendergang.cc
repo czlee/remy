@@ -238,7 +238,8 @@ SenderDataPoint SenderGang<SenderType>::SwitchedSender::statistics_for_log( void
     utility.packets_received(),
     utility.total_delay(),
     sender.window_size(),
-    sender.intersend_time()
+    sender.intersend_time(),
+    sending
   );
 }
 
