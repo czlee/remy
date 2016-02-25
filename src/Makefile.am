@@ -1,8 +1,8 @@
-AM_CPPFLAGS = -I../protobufs
+AM_CPPFLAGS = -I../protobufs -I../graph $(GL_CFLAGS) $(GLFW_CFLAGS) $(GLEW_CFLAGS) $(GLU_CFLAGS) $(PANGOCAIRO_CFLAGS) $(GTKMM_CFLAGS)
 AM_CXXFLAGS = $(PICKY_CXXFLAGS)
-LDADD = ../protobufs/libremyprotos.a -ljemalloc -lm $(protobuf_LIBS)
+LDADD = ../protobufs/libremyprotos.a -lm $(protobuf_LIBS)
 
-bin_PROGRAMS = remy rat-runner scoring-example configuration inspect-config inspect-simulationsdata
+bin_PROGRAMS = remy rat-runner scoring-example configuration inspect-config inspect-simulationsdata ratatouille
 
 common_source = delay.hh evaluator.cc evaluator.hh                     \
 	exponential.hh link.hh link-templates.cc                       \
@@ -28,3 +28,7 @@ configuration_SOURCES = input-configrange.cc
 inspect_config_SOURCES = inspect-configrange.cc
 
 inspect_simulationsdata_SOURCES = inspect-simulationsdata.cc
+
+ratatouille_LDADD = ../graph/libremygraph.a $(GL_LIBS) $(GLFW_LIBS) $(GLEW_LIBS) $(GLU_LIBS) $(PANGOCAIRO_LIBS) $(GTKMM_LIBS) $(LDADD)
+
+ratatouille_SOURCES = $(common_source) ratatouille.cc fader.hh fader.cc fader-templates.cc bb100.hh

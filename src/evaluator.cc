@@ -137,9 +137,10 @@ Evaluator::Outcome Evaluator::score( WhiskerTree & run_whiskers,
         &(the_outcome.simulation_results.add_run_data( x )) : NULL;
 
     /* run once */
-    Network<Rat, Rat> network1( Rat( run_whiskers, trace ), run_prng, x );
-    network1.run_simulation( ticks_to_run, run_data, log_interval_ticks );
-
+    Network<SenderGang<Rat, TimeSwitchedSender<Rat>>,
+	    SenderGang<Rat, TimeSwitchedSender<Rat>>> network1( Rat( run_whiskers, trace ), run_prng, x );
+    network1.run_simulation( ticks_to_run , run_data, log_interval_ticks );
+    
     the_outcome.score += network1.senders().utility();
     the_outcome.throughputs_delays.emplace_back( x, network1.senders().throughputs_delays() );
   }

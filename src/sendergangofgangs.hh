@@ -4,21 +4,22 @@
 #include <vector>
 #include <utility>
 #include "receiver.hh"
-#include "sendergang.hh"
 #include "senderdatapoint.hh"
 
-template <class Sender1, class Sender2>
+template <class Gang1Type, class Gang2Type>
 class SenderGangofGangs
 {
 private:
-  SenderGang<Sender1> gang1_;
-  SenderGang<Sender2> gang2_;
+  Gang1Type gang1_;
+  Gang2Type gang2_;
 
 public:
-  SenderGangofGangs( const SenderGang<Sender1> & gang1,
-		     const SenderGang<Sender2> & gang2 );
+  SenderGangofGangs( const Gang1Type & gang1,
+		     const Gang2Type & gang2 );
 
   unsigned int count_active_senders( void ) const;
+
+  unsigned int count_senders( void ) const { return gang1_.count_senders() + gang2_.count_senders(); }
 
   void switch_senders( const unsigned int num_sending, const double & tickno );
 
@@ -36,6 +37,12 @@ public:
   std::vector< SenderDataPoint > statistics_for_log( void ) const;
 
   double next_event_time( const double & tickno ) const;
+
+  const Gang1Type & gang1( void ) const { return gang1_; }
+  const Gang2Type & gang2( void ) const { return gang2_; }
+
+  Gang1Type & mutable_gang1( void ) { return gang1_; }
+  Gang2Type & mutable_gang2( void ) { return gang2_; }
 };
 
 #endif
