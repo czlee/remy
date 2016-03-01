@@ -61,10 +61,14 @@ class BaseFigureGenerator(object):
     plotsdir = '.'
     plot_kwargs = {}
     file_extension = None
+    start_time = 0
+    end_time = None
 
     def __init__(self, **kwargs):
         self._plotsdir = kwargs.pop('plotsdir', self.plotsdir)
         self.whiskers = kwargs.pop('whiskers', None)
+        self._start_time = kwargs.pop('start_time', self.start_time)
+        self._end_time = kwargs.pop('end_time', self.end_time)
         super(BaseFigureGenerator, self).__init__(**kwargs)
 
     def get_figfilename(self):
@@ -81,6 +85,9 @@ class BaseFigureGenerator(object):
     def _print_generating_line(self):
         print("Generating {}...".format(self.get_figfilename()))
 
+    def _in_range(self, time):
+        return time >= self._start_time and (self._end_time is None or time <= self._end_time)
+
     def get_raw_data(self, run_data, index, attrname):
         """Retrieves the attribute specified by `attrname` from each data point
         in `run_data`, for the sender `index`, and returns it in a list."""
@@ -88,18 +95,18 @@ class BaseFigureGenerator(object):
         if attrnames[0] == "whisker": # special case
             return self.get_whisker_data(run_data, index, attrnames[1])
 
-        result = [getattr(point.sender_data[index], attrnames[0]) for point in run_data.point]
+        result = [getattr(point.sender_data[index], attrnames[0]) for point in run_data.point
+                if self._in_range(point.seconds)]
         for attr in attrnames[1:]:
             result = [getattr(point, attr) for point in result]
         return result
 
-    @staticmethod
-    def get_times(run_data):
-        return [point.seconds for point in run_data.point]
+    def get_times(self, run_data):
+        return [point.seconds for point in run_data.point if self._in_range(point.seconds)]
 
-    @staticmethod
-    def get_sending(run_data):
-        return [tuple(data.sending for data in point.sender_data) for point in run_data.point]
+    def get_sending(self, run_data):
+        return [tuple(data.sending for data in point.sender_data) for point in run_data.point
+                if self._in_range(point.seconds)]
 
     def get_whisker_data(self, run_data, index, attrname):
         """Retrieves the attribute of the whisker specified by `attrname`, from
@@ -110,6 +117,8 @@ class BaseFigureGenerator(object):
         assert self.whiskers is not None, "Generators referencing whiskers must pass in the WhiskerTree to the constructor"
         data = []
         for point in run_data.point:
+            if not self._in_range(point.seconds):
+                continue
             whisker = find_whisker(self.whiskers, point.sender_data[index].memory)
             value = getattr(whisker, attrname)
             data.append(value)
@@ -509,6 +518,8 @@ parser.add_argument("--plots-only", action="store_true", default=False,
     help="Only generate plots, not animations")
 parser.add_argument("--animations-only", action="store_true", default=False,
     help="Only generate animations, not plots")
+parser.add_argument("--start-time", type=float, default=0,
+    help="Start plotting from this time")
 args = parser.parse_args()
 
 # First, try reading it as a data file
@@ -527,6 +538,7 @@ if not data.run_data:
 
 plotsdir = make_plots_dir(args.plots_dir, args.inputfile)
 BaseFigureGenerator.plotsdir = plotsdir
+BaseFigureGenerator.start_time = args.start_time
 utils.log_arguments(plotsdir, args)
 
 BaseAnimationGenerator.interval = data.settings.log_interval_ticks
