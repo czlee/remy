@@ -519,9 +519,10 @@ if not data.run_data:
     parameter_keys = ["nsenders", "link_ppt", "delay", "mean_on", "mean_off", "buffer_size", "interval", "sim_time"]
     parameters = {key: getattr(args, key) for key in parameter_keys}
     datafile = args.inputfile + ".data"
+    outfile = args.inputfile + ".out"
     print("Running sender-runner to produce " + datafile)
     runner = SenderRunnerRunner(**parameters)
-    runner.run(args.inputfile, datafile=datafile)
+    runner.run(args.inputfile, datafile=datafile, outfile=outfile)
     data = read_data_file(datafile)
 
 plotsdir = make_plots_dir(args.plots_dir, args.inputfile)
