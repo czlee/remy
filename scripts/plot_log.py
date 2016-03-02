@@ -85,8 +85,8 @@ class BaseFigureGenerator(object):
     def _print_generating_line(self):
         print("Generating {}...".format(self.get_figfilename()))
 
-    def _in_range(self, time):
-        return time >= self._start_time and (self._end_time is None or time <= self._end_time)
+    def _in_range(self, point):
+        return point.seconds >= self._start_time and (self._end_time is None or point.seconds <= self._end_time)
 
     def get_raw_data(self, run_data, index, attrname):
         """Retrieves the attribute specified by `attrname` from each data point
@@ -96,17 +96,17 @@ class BaseFigureGenerator(object):
             return self.get_whisker_data(run_data, index, attrnames[1])
 
         result = [getattr(point.sender_data[index], attrnames[0]) for point in run_data.point
-                if self._in_range(point.seconds)]
+                if self._in_range(point)]
         for attr in attrnames[1:]:
             result = [getattr(point, attr) for point in result]
         return result
 
     def get_times(self, run_data):
-        return [point.seconds for point in run_data.point if self._in_range(point.seconds)]
+        return [point.seconds for point in run_data.point if self._in_range(point)]
 
     def get_sending(self, run_data):
         return [tuple(data.sending for data in point.sender_data) for point in run_data.point
-                if self._in_range(point.seconds)]
+                if self._in_range(point)]
 
     def get_whisker_data(self, run_data, index, attrname):
         """Retrieves the attribute of the whisker specified by `attrname`, from
@@ -116,13 +116,28 @@ class BaseFigureGenerator(object):
         # structure for Memory and MemoryRange if it needs to be touched again.
         assert self.whiskers is not None, "Generators referencing whiskers must pass in the WhiskerTree to the constructor"
         data = []
-        for point in run_data.point:
-            if not self._in_range(point.seconds):
-                continue
+        for point in filter(self._in_range, run_data.point):
             whisker = find_whisker(self.whiskers, point.sender_data[index].memory)
             value = getattr(whisker, attrname)
             data.append(value)
         return data
+
+    def get_whisker_change_times(self, run_data, index):
+        assert self.whiskers is not None, "Generators referencing whiskers must pass in the WhiskerTree to the constructor"
+        times = []
+        last_whisker = None
+        for point in filter(self._in_range, run_data.point):
+            whisker = find_whisker(self.whiskers, point.sender_data[index].memory)
+            if whisker != last_whisker:
+                times.append(point.seconds)
+            last_whisker = whisker
+        return times
+
+    def plot_whisker_change_times(self, ax, run_data, index):
+        """Adds dots for whisker changes times on the axes `ax`."""
+        times = self.get_whisker_change_times(run_data, index)
+        for time in times:
+            ax.axvline(time, color=(0.5, 0.5, 0.5))
 
 
 class BasePlotGenerator(BaseFigureGenerator):
@@ -134,7 +149,8 @@ class BasePlotGenerator(BaseFigureGenerator):
     def iter_plot_data(self, run_data):
         """Iterates through data to be plotted. The default implementation just
         gives the single element `self.get_plot_data(run_data)`. Subclasses
-        that need to plot more than one series should override this method."""
+        that need to plot more than one series should override this method.
+        Each iteration should yield a 3-tuple (x, y, label)."""
         yield self.get_plot_data(run_data) + (None,)
 
     def get_plot_data(self, run_data):
@@ -148,22 +164,23 @@ class BasePlotGenerator(BaseFigureGenerator):
         SimulationRunData instance."""
 
         self._print_generating_line()
-        plt.figure()
+        fig, ax = plt.subplots()
 
         for x, y, label in self.iter_plot_data(run_data):
-            plt.plot(x, y, label=label, **self.plot_kwargs)
+            ax.plot(x, y, label=label, **self.plot_kwargs)
 
-        plt.title(self.title)
-        plt.xlabel(self.xlabel)
-        plt.ylabel(self.ylabel)
+        ax.set_title(self.title)
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
         if hasattr(self, 'get_xlim'):
-            plt.xlim(self.get_xlim(run_data))
+            ax.set_xlim(self.get_xlim(run_data))
         if hasattr(self, 'get_ylim'):
-            plt.ylim(self.get_ylim(run_data))
-        if len(plt.gca().lines) > 1:
-            plt.legend(loc=self.legend_location)
-        plt.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
-        plt.close()
+            ax.set_ylim(self.get_ylim(run_data))
+        if len(ax.lines) > 1:
+            ax.legend(loc=self.legend_location)
+
+        fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
+        plt.close(fig)
 
 
 class BaseAnimationGenerator(BaseFigureGenerator):
@@ -224,6 +241,8 @@ class BaseAnimationGenerator(BaseFigureGenerator):
         anim = FuncAnimation(self._fig, self._animate, frames=len(self._times),
             interval=self._interval)
         anim.save(self.get_figfilename(), dpi=self.dpi)
+
+        plt.close(self._fig)
 
     def get_plot_data(self, run_data):
         """Must be impelemented by subclasses. Returns a tuple of two elements
@@ -390,6 +409,55 @@ class DifferenceQuotientTimePlotGenerator(TimePlotGenerator):
             else:
                 data.append(n/d)
         return data
+
+
+class TwoScalesTimePlotGenerator(BaseFigureGenerator):
+    """Abstract base class to generate plots with two y-axis scales."""
+
+    legend_location = 'best'
+    file_extension = 'png'
+
+    color1 = 'b'
+    color2 = 'r'
+
+    def __init__(self, spec1, spec2, **kwargs):
+        self.figfilename = "{attr1}_{index1:d}__{attr2}_{index2:d}".format(
+            attr1=spec1[0], index1=spec1[1], attr2=spec2[0], index2=spec2[1])
+        self.title1 = pretty(spec1[0]) + " " + str(spec1[1])
+        self.title2 = pretty(spec2[0]) + " " + str(spec2[1])
+        self.spec1 = spec1
+        self.spec2 = spec2
+
+        super(TwoScalesTimePlotGenerator, self).__init__(**kwargs)
+
+    def generate(self, run_data):
+        """Generates the plot for `run_data`, which should be a
+        SimulationRunData instance."""
+
+        self._print_generating_line()
+        fig, ax1 = plt.subplots()
+        t = self.get_times(run_data)
+        y1 = self.get_raw_data(run_data, self.spec1[1], self.spec1[0])
+        y2 = self.get_raw_data(run_data, self.spec2[1], self.spec2[0])
+
+        ax1.plot(t, y1, color=self.color1)
+        ax1.set_xlabel('time (s)')
+        ax1.set_ylabel(self.title1, color=self.color1)
+        for tl in ax1.get_yticklabels():
+            tl.set_color(self.color1)
+        ax1.set_xlim([min(t), max(t)])
+
+        ax2 = ax1.twinx()
+        ax2.plot(t, y2, color=self.color2)
+        ax2.set_ylabel(self.title2, color=self.color2)
+        for tl in ax2.get_yticklabels():
+            tl.set_color(self.color2)
+        ax2.set_xlim([min(t), max(t)])
+
+        self.plot_whisker_change_times(ax1, run_data, self.spec1[1])
+
+        fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
+        plt.close(fig)
 
 
 class BaseParametricPlotGenerator(BasePlotGenerator):
@@ -574,6 +642,21 @@ if not args.animations_only:
         SingleSenderParametricPlotGenerator(("window_size", "intersend_time"), 1),
         SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 0),
         SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 1),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rec_rec_ewma", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rtt_ratio", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("memory.slow_rec_rec_ewma", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("whisker.intersend", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("window_size", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_increment", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_increment", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.intersend", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("whisker.intersend", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("window_size", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("whisker.window_multiple", 0), ("window_size", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("window_size", 0), ("intersend_time", 0), whiskers=data.whiskers),
     ])
 
 if not args.plots_only:
