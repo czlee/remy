@@ -36,6 +36,3 @@ def make_output_dir(dirname, default_parent, default_child, symlink):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     return dirname
-
-
-

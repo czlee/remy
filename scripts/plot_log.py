@@ -6,15 +6,6 @@ import argparse
 import os
 import sys
 from textwrap import wrap
-try:
-    sys.path.append(os.path.join(os.path.dirname(__file__), "..", "protobufs"))
-    import simulationresults_pb2
-except ImportError as e:
-    if "google.protobuf" in str(e):
-        print("This script requires google.protobuf. Run: sudo apt-get install python-protobuf")
-    else:
-        print("Run 'make' in the directory one level above this one before using this script.")
-    exit(1)
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -22,33 +13,13 @@ from senderrunner_runner import SenderRunnerRunner
 from matplotlib.patches import Circle
 from matplotlib.animation import FuncAnimation
 import utils
+import datautils
 
 DEFAULT_PLOTS_DIR = "log-plots"
 LAST_PLOTS_SYMLINK = "last-plots"
 
 def pretty(name):
     return name.split('.')[-1].capitalize().replace("_", " ")
-
-def contains_memory(memoryrange, memory):
-    for field, value in memoryrange.lower.ListFields():
-        if getattr(memory, field.name) < value:
-            return False
-    for field, value in memoryrange.upper.ListFields():
-        if getattr(memory, field.name) > value:
-            return False
-    return True
-
-def find_whisker(tree, memory):
-    while tree.children:
-        for child in tree.children:
-            if contains_memory(child.domain, memory):
-                tree = child
-                break # then continue in while loop
-        else:
-            raise RuntimeError("Couldn't find whisker for {!r}".format(point.memory))
-    assert tree.HasField("leaf"), "WhiskerTree has neither leaf nor children"
-    assert contains_memory(tree.leaf.domain, memory)
-    return tree.leaf
 
 class BaseFigureGenerator(object):
     """Abstract base class to generate figures.
@@ -66,7 +37,6 @@ class BaseFigureGenerator(object):
 
     def __init__(self, **kwargs):
         self._plotsdir = kwargs.pop('plotsdir', self.plotsdir)
-        self.whiskers = kwargs.pop('whiskers', None)
         self._start_time = kwargs.pop('start_time', self.start_time)
         self._end_time = kwargs.pop('end_time', self.end_time)
         super(BaseFigureGenerator, self).__init__(**kwargs)
@@ -78,66 +48,10 @@ class BaseFigureGenerator(object):
         return name
 
     def generate(self, run_data):
-        """Generates the figure for `run_data`, which should be a
-        SimulationRunData instance."""
         raise NotImplementedError("Subclasses must implement generate()")
 
     def _print_generating_line(self):
         print("Generating {}...".format(self.get_figfilename()))
-
-    def _in_range(self, point):
-        return point.seconds >= self._start_time and (self._end_time is None or point.seconds <= self._end_time)
-
-    def get_raw_data(self, run_data, index, attrname):
-        """Retrieves the attribute specified by `attrname` from each data point
-        in `run_data`, for the sender `index`, and returns it in a list."""
-        attrnames = attrname.split('.')
-        if attrnames[0] == "whisker": # special case
-            return self.get_whisker_data(run_data, index, attrnames[1])
-
-        result = [getattr(point.sender_data[index], attrnames[0]) for point in run_data.point
-                if self._in_range(point)]
-        for attr in attrnames[1:]:
-            result = [getattr(point, attr) for point in result]
-        return result
-
-    def get_times(self, run_data):
-        return [point.seconds for point in run_data.point if self._in_range(point)]
-
-    def get_sending(self, run_data):
-        return [tuple(data.sending for data in point.sender_data) for point in run_data.point
-                if self._in_range(point)]
-
-    def get_whisker_data(self, run_data, index, attrname):
-        """Retrieves the attribute of the whisker specified by `attrname`, from
-        the whisker that would be active at each data point in `run_data`,
-        for the sender `index`, and returns it in a list."""
-        # This is a little hacky, it should be refactored into a proper
-        # structure for Memory and MemoryRange if it needs to be touched again.
-        assert self.whiskers is not None, "Generators referencing whiskers must pass in the WhiskerTree to the constructor"
-        data = []
-        for point in filter(self._in_range, run_data.point):
-            whisker = find_whisker(self.whiskers, point.sender_data[index].memory)
-            value = getattr(whisker, attrname)
-            data.append(value)
-        return data
-
-    def get_whisker_change_times(self, run_data, index):
-        assert self.whiskers is not None, "Generators referencing whiskers must pass in the WhiskerTree to the constructor"
-        times = []
-        last_whisker = None
-        for point in filter(self._in_range, run_data.point):
-            whisker = find_whisker(self.whiskers, point.sender_data[index].memory)
-            if whisker != last_whisker:
-                times.append(point.seconds)
-            last_whisker = whisker
-        return times
-
-    def plot_whisker_change_times(self, ax, run_data, index):
-        """Adds dots for whisker changes times on the axes `ax`."""
-        times = self.get_whisker_change_times(run_data, index)
-        for time in times:
-            ax.axvline(time, color=(0.5, 0.5, 0.5))
 
 
 class BasePlotGenerator(BaseFigureGenerator):
@@ -159,28 +73,34 @@ class BasePlotGenerator(BaseFigureGenerator):
         The two lists must have the same length."""
         raise NotImplementedError("Subclasses must implement either get_plot_data() or iter_plot_data()")
 
-    def generate(self, run_data):
+    def generate(self, run_data, whiskers=None):
+        """Generates the figure for `run_data`, which should be a
+        SimulationRunData instance."""
+        self._print_generating_line()
+        self.whiskers = whiskers
+        self.fig = plt.figure()
+        self.generate_plot(run_data)
+        self.fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
+        plt.close(self.fig)
+
+    def generate_plot(self, run_data):
         """Generates the plot for `run_data`, which should be a
         SimulationRunData instance."""
 
-        self._print_generating_line()
-        fig, ax = plt.subplots()
+        self.ax = self.fig.add_subplot(111)
 
         for x, y, label in self.iter_plot_data(run_data):
-            ax.plot(x, y, label=label, **self.plot_kwargs)
+            self.ax.plot(x, y, label=label, **self.plot_kwargs)
 
-        ax.set_title(self.title)
-        ax.set_xlabel(self.xlabel)
-        ax.set_ylabel(self.ylabel)
+        self.ax.set_title(self.title)
+        self.ax.set_xlabel(self.xlabel)
+        self.ax.set_ylabel(self.ylabel)
         if hasattr(self, 'get_xlim'):
-            ax.set_xlim(self.get_xlim(run_data))
+            self.ax.set_xlim(self.get_xlim(run_data))
         if hasattr(self, 'get_ylim'):
-            ax.set_ylim(self.get_ylim(run_data))
-        if len(ax.lines) > 1:
-            ax.legend(loc=self.legend_location)
-
-        fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
-        plt.close(fig)
+            self.ax.set_ylim(self.get_ylim(run_data))
+        if len(self.ax.lines) > 1:
+            self.ax.legend(loc=self.legend_location)
 
 
 class BaseAnimationGenerator(BaseFigureGenerator):
@@ -198,7 +118,29 @@ class BaseAnimationGenerator(BaseFigureGenerator):
         self._interval = kwargs.pop('interval', self.interval)
         super(BaseAnimationGenerator, self).__init__(**kwargs)
 
-    def _animate(self, i):
+    def animate(self, i):
+        """Draws frame `i`. This function is passed to FuncAnimation; see
+        the matplotlib animations documentation for details."""
+        raise NotImplementedError("Subclasses must implement animate()")
+
+    def generate(self, run_data):
+        self._print_generating_line()
+        self.fig = plt.figure()
+        self.initial(run_data)
+        anim = FuncAnimation(self._fig, self.animate, frames=len(self._times),
+            interval=self._interval)
+        anim.save(self.get_figfilename(), dpi=self.dpi)
+        plt.close(self.fig)
+
+    def initial(self, run_data):
+        """Initializes the animation. This function is passed to FuncAnimation;
+        see the matplotlib animations documentation for details."""
+        raise NotImplementedError("Subclasses must implement initial()")
+
+
+class BaseSingleAnimationGenerator(BaseAnimationGenerator):
+
+    def animate(self, i):
         sys.stdout.write("Up to frame {:d} of {:d}...\r".format(i, len(self._times)))
         sys.stdout.flush()
         if i < self.history:
@@ -209,40 +151,27 @@ class BaseAnimationGenerator(BaseFigureGenerator):
         for circle, sending in zip(self._circles, self._sending[i]):
             circle.set_facecolor('g' if sending else 'r')
 
-    def generate(self, run_data):
-        """Generates the animation for `run_data`, which should be a
-        SimulationRunData instance."""
-
-        self._print_generating_line()
-
+    def initial(self, run_data):
         self._times = self.get_times(run_data)
         self._sending = self.get_sending(run_data)
         self._x, self._y = self.get_plot_data(run_data)
         xmax = max(self._x)
         ymax = max(self._y)
 
-        self._fig = plt.figure()
-        self._ax = self._fig.add_subplot(111)
-        self._ax.set_title(self.title)
-        self._ax.set_xlabel(self.xlabel)
-        self._ax.set_ylabel(self.ylabel)
-        self._ax.set_xlim([0, xmax])
-        self._ax.set_ylim([0, ymax])
+        self.ax = self.fig.add_subplot(111)
+        self.ax.set_title(self.title)
+        self.ax.set_xlabel(self.xlabel)
+        self.ax.set_ylabel(self.ylabel)
+        self.ax.set_xlim([0, xmax])
+        self.ax.set_ylim([0, ymax])
 
-        self._line = self._ax.plot([], [], **self.plot_kwargs)[0]
-        self._text = self._ax.text(0.05, 0.95, '', transform=self._ax.transAxes)
+        self._line = self.ax.plot([], [], **self.plot_kwargs)[0]
+        self._text = self.ax.text(0.05, 0.95, '', transform=self.ax.transAxes)
         self._circles = []
         for i in range(run_data.config.num_senders):
-            circle = Circle((0.05+i*0.05, 0.90), radius=0.02, facecolor='k', transform=self._ax.transAxes)
-            self._ax.add_artist(circle)
+            circle = Circle((0.05+i*0.05, 0.90), radius=0.02, facecolor='k', transform=self.ax.transAxes)
+            self.ax.add_artist(circle)
             self._circles.append(circle)
-
-
-        anim = FuncAnimation(self._fig, self._animate, frames=len(self._times),
-            interval=self._interval)
-        anim.save(self.get_figfilename(), dpi=self.dpi)
-
-        plt.close(self._fig)
 
     def get_plot_data(self, run_data):
         """Must be impelemented by subclasses. Returns a tuple of two elements
@@ -265,8 +194,7 @@ class BaseGridAnimationGenerator(BaseAnimationGenerator):
     plot_kwargs = {'linestyle': 'solid', 'linewidth': 0.25, 'color': (0.75, 0.75, 0.75),
             'marker': '.', 'markersize': 4.0, 'markerfacecolor': 'blue', 'markeredgecolor': 'blue'}
 
-    def _animate(self, index):
-        """Override the single animation case."""
+    def animate(self, index):
         sys.stdout.write("Up to frame {:d} of {:d}...\r".format(index, len(self._times)))
         sys.stdout.flush()
         nvars = self._nvars
@@ -283,30 +211,24 @@ class BaseGridAnimationGenerator(BaseAnimationGenerator):
         for circle, sending in zip(self._circles, self._sending[index]):
             circle.set_facecolor('g' if sending else 'r')
 
-    def generate(self, run_data):
-        """Override the single animation case."""
-
-        self._print_generating_line()
-
-        self._times = self.get_times(run_data)
-        self._sending = self.get_sending(run_data)
+    def initial(self, run_data):
+        self._times = run_data.get_times()
+        self._sending = run_data.get_sending()
         self._data = self.get_plot_data(run_data)
         nvars = self._nvars = len(self._data)
         maxes = [max(d) for d in self._data]
 
-        self._fig = plt.figure()
         self._lines = [] # will be a 2D list of axes, indexed by (row, col)
-        self._text = self._fig.text(0.05, 0.95, '', size=self.timetextsize)
+        self._text = self.fig.text(0.05, 0.95, '', size=self.timetextsize)
         self._circles = []
-        for i in range(run_data.config.num_senders):
-            circle = Circle((0.05+i*0.05, 0.92), radius=0.02, facecolor='k', transform=self._fig.transFigure)
-            self._fig.patches.append(circle)
+        for i in range(run_data.num_senders):
+            circle = Circle((0.05+i*0.05, 0.92), radius=0.02, facecolor='k', transform=self.fig.transFigure)
+            self.fig.patches.append(circle)
             self._circles.append(circle)
-
 
         for i in range(nvars):
             for j in range(nvars):
-                ax = self._fig.add_subplot(nvars, nvars, i*nvars+j+1)
+                ax = self.fig.add_subplot(nvars, nvars, i*nvars+j+1)
                 line = ax.plot([], [], **self.plot_kwargs)[0]
                 self._lines.append(line)
 
@@ -334,29 +256,67 @@ class BaseGridAnimationGenerator(BaseAnimationGenerator):
                 else:
                     ax.set_yticklabels([])
 
-        anim = FuncAnimation(self._fig, self._animate, frames=len(self._times),
-            interval=self._interval)
-        anim.save(self.get_figfilename(), dpi=self.dpi)
+    def get_plot_data(self, run_data):
+        """Must be impelemented by subclasses. Returns a tuple of lists, each
+        being a list of data points. The lists must all have the same length.
+        The animation will plot one plot for each pair of lists."""
+        raise NotImplementedError("Subclasses must implement get_plot_data()")
 
 
-class TimePlotGenerator(BasePlotGenerator):
-    """Abstract base class to generate plots where the x-axis is time."""
+class TimePlotMixin(object):
+    """Provides functions for plots where the x-axis is time."""
 
     xlabel = "Time (s)"
+    overlay_whiskers = False
+
+    def __init__(self, **kwargs):
+        self._overlay_whiskers = kwargs.pop('overlay_whiskers', self.overlay_whiskers)
+        super(TimePlotMixin, self).__init__(**kwargs)
 
     def get_xlim(self, run_data):
-        x = self.get_times(run_data)
+        x = run_data.get_times()
         return [min(x), max(x)]
+
+    def plot_whisker_change_times(self, ax, run_data, index):
+        """Adds dots for whisker changes times on the axes `ax`."""
+        times = run_data.get_whisker_change_times(index)
+        for time in times:
+            ax.axvline(time, color=(0.5, 0.5, 0.5))
+
+    def plot_whisker_bounds(self, ax, run_data, index, attrname):
+        lower, upper = run_data.get_whisker_bounds(index, attrname)
+        t_start = run_data.get_whisker_change_times(index)
+        t_end = t_start[1:] + [run_data.get_times()[-1]]
+        ymin, ymax = ax.get_ylim()
+        for t1, t2, l, u in zip(t_start, t_end, lower, upper):
+            ax.fill([t1, t1, t2, t2], [ymin, l, l, ymin], color=(0.75, 0.75, 0.75))
+            ax.fill([t1, t1, t2, t2], [u, ymax, ymax, u], color=(0.75, 0.75, 0.75))
+
+
+class TimePlotGenerator(TimePlotMixin, BasePlotGenerator):
+    """Abstract base class to generate plots where the x-axis is time."""
+
+    def __init__(self, senders=None, **kwargs):
+        self.senders = senders
+
+        super(TimePlotGenerator, self).__init__(**kwargs)
 
     def get_values(self, run_data, index):
         raise NotImplementedError("Subclasses must implement get_values()")
 
     def iter_plot_data(self, run_data):
-        x = self.get_times(run_data)
-        for i in range(run_data.config.num_senders):
+        x = run_data.get_times()
+        senders = self.senders if self.senders is not None else range(run_data.num_senders)
+        for i in senders:
             y = self.get_values(run_data, i)
             label = "sender {:d}".format(i)
             yield x, y, label
+
+    def generate_plot(self, run_data):
+        super(TimePlotGenerator, self).generate_plot(run_data)
+        if self._overlay_whiskers and self.senders is not None and len(self.senders) == 1:
+            sender = self.senders[0]
+            self.plot_whisker_change_times(self.ax, run_data, sender)
 
 
 class RawDataTimePlotGenerator(TimePlotGenerator):
@@ -376,7 +336,17 @@ class RawDataTimePlotGenerator(TimePlotGenerator):
         super(RawDataTimePlotGenerator, self).__init__(**kwargs)
 
     def get_values(self, run_data, index):
-        return self.get_raw_data(run_data, index, self.attrname)
+        return run_data.get_raw_data(index, self.attrname)
+
+    def generate_plot(self, run_data):
+        super(RawDataTimePlotGenerator, self).generate_plot(run_data)
+        if self._overlay_whiskers and self.senders is not None and len(self.senders) == 1:
+            sender = self.senders[0]
+            if self.attrname.startswith("memory."):
+                ylim = self.ax.get_ylim()
+                attrname = self.attrname[7:]
+                self.plot_whisker_bounds(self.ax, run_data, sender, attrname)
+                self.ax.set_ylim(ylim)
 
 
 class DifferenceQuotientTimePlotGenerator(TimePlotGenerator):
@@ -396,8 +366,8 @@ class DifferenceQuotientTimePlotGenerator(TimePlotGenerator):
         super(DifferenceQuotientTimePlotGenerator, self).__init__(**kwargs)
 
     def get_values(self, run_data, index):
-        numerator_values = self.get_raw_data(run_data, index, self.numerator_attrname)
-        denominator_values = self.get_raw_data(run_data, index, self.denominator_attrname)
+        numerator_values = run_data.get_raw_data(index, self.numerator_attrname)
+        denominator_values = run_data.get_raw_data(index, self.denominator_attrname)
         data = [0.0]
         for i in xrange(1, len(numerator_values)):
             n = numerator_values[i] - numerator_values[i-1]
@@ -411,8 +381,10 @@ class DifferenceQuotientTimePlotGenerator(TimePlotGenerator):
         return data
 
 
-class TwoScalesTimePlotGenerator(BaseFigureGenerator):
-    """Abstract base class to generate plots with two y-axis scales."""
+class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
+    """Class to generate plots with two y-axis scales."""
+    # TODO Separate two-scales plot functionality from time retrieval of
+    # data.
 
     legend_location = 'best'
     file_extension = 'png'
@@ -430,18 +402,17 @@ class TwoScalesTimePlotGenerator(BaseFigureGenerator):
 
         super(TwoScalesTimePlotGenerator, self).__init__(**kwargs)
 
-    def generate(self, run_data):
+    def generate_plot(self, run_data):
         """Generates the plot for `run_data`, which should be a
         SimulationRunData instance."""
 
-        self._print_generating_line()
-        fig, ax1 = plt.subplots()
-        t = self.get_times(run_data)
-        y1 = self.get_raw_data(run_data, self.spec1[1], self.spec1[0])
-        y2 = self.get_raw_data(run_data, self.spec2[1], self.spec2[0])
+        ax1 = self.fig.add_subplot(111)
+        t = run_data.get_times()
+        y1 = run_data.get_raw_data(self.spec1[1], self.spec1[0])
+        y2 = run_data.get_raw_data(self.spec2[1], self.spec2[0])
 
         ax1.plot(t, y1, color=self.color1)
-        ax1.set_xlabel('time (s)')
+        ax1.set_xlabel('Time (s)')
         ax1.set_ylabel(self.title1, color=self.color1)
         for tl in ax1.get_yticklabels():
             tl.set_color(self.color1)
@@ -454,10 +425,8 @@ class TwoScalesTimePlotGenerator(BaseFigureGenerator):
             tl.set_color(self.color2)
         ax2.set_xlim([min(t), max(t)])
 
-        self.plot_whisker_change_times(ax1, run_data, self.spec1[1])
-
-        fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
-        plt.close(fig)
+        if self._overlay_whiskers:
+            self.plot_whisker_change_times(ax1, run_data, self.spec1[1])
 
 
 class BaseParametricPlotGenerator(BasePlotGenerator):
@@ -485,8 +454,8 @@ class SenderVersusSenderMixin(object):
         super(SenderVersusSenderMixin, self).__init__(**kwargs)
 
     def get_plot_data(self, run_data):
-        x = self.get_raw_data(run_data, self.indices[0], self.attrname)
-        y = self.get_raw_data(run_data, self.indices[1], self.attrname)
+        x = run_data.get_raw_data(self.indices[0], self.attrname)
+        y = run_data.get_raw_data(self.indices[1], self.attrname)
         return x, y
 
 
@@ -509,8 +478,8 @@ class SingleSenderParametricMixin(object):
         super(SingleSenderParametricMixin, self).__init__(**kwargs)
 
     def get_plot_data(self, run_data):
-        x = self.get_raw_data(run_data, self.index, self.attrnames[0])
-        y = self.get_raw_data(run_data, self.index, self.attrnames[1])
+        x = run_data.get_raw_data(self.index, self.attrnames[0])
+        y = run_data.get_raw_data(self.index, self.attrnames[1])
         return x, y
 
 
@@ -519,7 +488,7 @@ class SenderVersusSenderPlotGenerator(SenderVersusSenderMixin, BaseParametricPlo
     pass
 
 
-class SenderVersusSenderAnimationGenerator(SenderVersusSenderMixin, BaseAnimationGenerator):
+class SenderVersusSenderAnimationGenerator(SenderVersusSenderMixin, BaseSingleAnimationGenerator):
     """Generates animations that show the progress of two senders with time."""
     pass
 
@@ -529,7 +498,7 @@ class SingleSenderParametricPlotGenerator(SingleSenderParametricMixin, BaseParam
     pass
 
 
-class SingleSenderParametricAnimationGenerator(SingleSenderParametricMixin, BaseAnimationGenerator):
+class SingleSenderParametricAnimationGenerator(SingleSenderParametricMixin, BaseSingleAnimationGenerator):
     """Generates animations that show the progress of two variables with time."""
     pass
 
@@ -543,7 +512,7 @@ class MultiVariableParametricGridAnimationGenerator(BaseGridAnimationGenerator):
         super(MultiVariableParametricGridAnimationGenerator, self).__init__(**kwargs)
 
     def get_plot_data(self, run_data):
-        return [self.get_raw_data(run_data, index, attrname) for attrname, index in self.specs]
+        return [run_data.get_raw_data(index, attrname) for attrname, index in self.specs]
 
 
 def make_plots_dir(dirname, argvalue):
@@ -552,13 +521,6 @@ def make_plots_dir(dirname, argvalue):
     else:
         basename = argvalue
     return utils.make_output_dir(dirname, DEFAULT_PLOTS_DIR, basename, LAST_PLOTS_SYMLINK)
-
-def read_data_file(logfilename):
-    logfile = open(logfilename, 'rb')
-    data = simulationresults_pb2.SimulationsData()
-    data.ParseFromString(logfile.read())
-    logfile.close()
-    return data
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("inputfile", type=str,
@@ -588,10 +550,12 @@ parser.add_argument("--animations-only", action="store_true", default=False,
     help="Only generate animations, not plots")
 parser.add_argument("--start-time", type=float, default=0,
     help="Start plotting from this time")
+parser.add_argument("--whiskers-overlay", action="store_true", default=False,
+    help="Overlay information about whiskers")
 args = parser.parse_args()
 
 # First, try reading it as a data file
-data = read_data_file(args.inputfile)
+data = datautils.read_data_file(args.inputfile)
 
 # If there's nothing in it, it was probably a RemyCC
 if not data.run_data:
@@ -602,7 +566,7 @@ if not data.run_data:
     print("Running sender-runner to produce " + datafile)
     runner = SenderRunnerRunner(**parameters)
     runner.run(args.inputfile, datafile=datafile, outfile=outfile)
-    data = read_data_file(datafile)
+    data = datautils.read_data_file(datafile)
 
 plotsdir = make_plots_dir(args.plots_dir, args.inputfile)
 BaseFigureGenerator.plotsdir = plotsdir
@@ -610,6 +574,7 @@ BaseFigureGenerator.start_time = args.start_time
 utils.log_arguments(plotsdir, args)
 
 BaseAnimationGenerator.interval = data.settings.log_interval_ticks
+TimePlotMixin.overlay_whiskers = args.whiskers_overlay
 
 generators = []
 
@@ -622,14 +587,14 @@ if not args.animations_only:
         RawDataTimePlotGenerator("total_delay", "ms"),
         RawDataTimePlotGenerator("window_size"),
         RawDataTimePlotGenerator("intersend_time", "ms"),
-        RawDataTimePlotGenerator("memory.rec_send_ewma", "ms"),
-        RawDataTimePlotGenerator("memory.rec_rec_ewma", "ms"),
-        RawDataTimePlotGenerator("memory.rtt_ratio", "ms"),
-        RawDataTimePlotGenerator("memory.slow_rec_rec_ewma", "ms"),
+        RawDataTimePlotGenerator("memory.rec_send_ewma", "ms", senders=(0,)),
+        RawDataTimePlotGenerator("memory.rec_rec_ewma", "ms", senders=(0,)),
+        RawDataTimePlotGenerator("memory.rtt_ratio", "ms", senders=(0,)),
+        RawDataTimePlotGenerator("memory.slow_rec_rec_ewma", "ms", senders=(0,)),
         RawDataTimePlotGenerator("sending"),
-        RawDataTimePlotGenerator("whisker.window_increment", whiskers=data.whiskers),
-        RawDataTimePlotGenerator("whisker.window_multiple", whiskers=data.whiskers),
-        RawDataTimePlotGenerator("whisker.intersend", whiskers=data.whiskers),
+        RawDataTimePlotGenerator("whisker.window_increment"),
+        RawDataTimePlotGenerator("whisker.window_multiple"),
+        RawDataTimePlotGenerator("whisker.intersend"),
         DifferenceQuotientTimePlotGenerator("packets_received", "sending_duration", "throughput"),
         DifferenceQuotientTimePlotGenerator("total_delay", "packets_received", "delay"),
         SenderVersusSenderPlotGenerator("window_size", (0, 1)),
@@ -642,21 +607,21 @@ if not args.animations_only:
         SingleSenderParametricPlotGenerator(("window_size", "intersend_time"), 1),
         SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 0),
         SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 1),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rec_rec_ewma", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rtt_ratio", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("memory.slow_rec_rec_ewma", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("whisker.intersend", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("window_size", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_increment", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_increment", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.intersend", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("whisker.intersend", 0), ("whisker.window_multiple", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("window_size", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("whisker.window_multiple", 0), ("window_size", 0), whiskers=data.whiskers),
-        TwoScalesTimePlotGenerator(("window_size", 0), ("intersend_time", 0), whiskers=data.whiskers),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rec_rec_ewma", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rtt_ratio", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("memory.slow_rec_rec_ewma", 0)),
+        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("whisker.intersend", 0)),
+        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("window_size", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_increment", 0)),
+        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_increment", 0)),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.intersend", 0)),
+        TwoScalesTimePlotGenerator(("whisker.intersend", 0), ("whisker.window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("window_size", 0)),
+        TwoScalesTimePlotGenerator(("whisker.window_multiple", 0), ("window_size", 0)),
+        TwoScalesTimePlotGenerator(("window_size", 0), ("intersend_time", 0)),
     ])
 
 if not args.plots_only:
@@ -685,4 +650,4 @@ if not args.plots_only:
 
 for run_data in data.run_data:
     for generator in generators:
-        generator.generate(run_data)
+        generator.generate(datautils.RunData(run_data, start_time=args.start_time, whiskers=data.whiskers))
