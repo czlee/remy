@@ -54,6 +54,7 @@ message SenderDataPoint {
     optional float average_delay = 5;
     optional float sending_duration = 6;
     optional uint32 packets_received = 7;
+    optional uint32 packets_sent = 13;
     optional float total_delay = 8;
     optional uint32 window_size = 9;
     optional float intersend_time = 10;

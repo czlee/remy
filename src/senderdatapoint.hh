@@ -23,6 +23,7 @@ public:
     ret.set_average_delay( average_delay );
     ret.set_sending_duration( sending_duration );
     ret.set_packets_received( packets_received );
+    ret.set_packets_sent( packets_sent );
     ret.set_total_delay( total_delay );
     if (type == RAT) {
       ret.set_window_size( window_size );
@@ -35,16 +36,25 @@ public:
     return ret;
   }
 
-  SenderDataPoint( SenderDataPointSenderType type, Memory memory, double average_throughput,
-      double average_delay, double sending_duration, unsigned int
-      packets_received, double total_delay, unsigned int window_size, double
-      intersend_time, double lambda, bool sending ) :
+  SenderDataPoint( SenderDataPointSenderType type,
+      Memory memory,
+      double average_throughput,
+      double average_delay,
+      double sending_duration,
+      unsigned int packets_received,
+      unsigned int packets_sent,
+      double total_delay,
+      unsigned int window_size,
+      double intersend_time,
+      double lambda,
+      bool sending ) :
     type( type ),
     memory( memory ),
     average_throughput( average_throughput ),
     average_delay( average_delay ),
     sending_duration( sending_duration ),
     packets_received( packets_received ),
+    packets_sent( packets_sent ),
     total_delay( total_delay ),
     window_size( window_size ),
     intersend_time( intersend_time ),
@@ -58,6 +68,7 @@ private:
   double average_delay = 0;
   double sending_duration = 0;
   unsigned int packets_received = 0;
+  unsigned int packets_sent = 0;
   double total_delay = 0;
   unsigned int window_size = 0;
   double intersend_time = 0;
