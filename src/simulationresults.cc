@@ -19,6 +19,14 @@ void SimulationRunDataPoint::add_sender_data( std::vector< SenderDataPoint > new
   sender_data.insert( sender_data.end(), new_data.begin(), new_data.end() );
 }
 
+void SimulationRunDataPoint::add_network_data( std::vector< unsigned int > packets_in_flight )
+{
+  assert( packets_in_flight.size() == sender_data.size() );
+  for (unsigned int i = 0; i < packets_in_flight.size(); i++) {
+    sender_data[i].set_packets_in_flight( packets_in_flight[i] );
+  }
+}
+
 template <>
 void SimulationResults< WhiskerTree >::_populate_actions( SimulationResultBuffers::SimulationsData & pb ) const
 {

@@ -60,4 +60,5 @@ message SenderDataPoint {
     optional float intersend_time = 10;
     optional bool sending = 11;
     optional float lambda = 12;
+    optional uint32 packets_in_flight = 14;
 }

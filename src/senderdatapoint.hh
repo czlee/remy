@@ -33,6 +33,7 @@ public:
     }
     ret.mutable_memory()->CopyFrom( memory.DNA() );
     ret.set_sending( sending );
+    ret.set_packets_in_flight( packets_in_flight );
     return ret;
   }
 
@@ -59,7 +60,13 @@ public:
     window_size( window_size ),
     intersend_time( intersend_time ),
     lambda( lambda ),
-    sending( sending ) {};
+    sending( sending ),
+    packets_in_flight( 0 ) {};
+
+  void set_packets_in_flight( unsigned int _packets )
+  {
+    packets_in_flight = _packets;
+  }
 
 private:
   SenderDataPointSenderType type;
@@ -74,6 +81,7 @@ private:
   double intersend_time = 0;
   double lambda = 0;
   bool sending = false;
+  unsigned int packets_in_flight = 0;
 };
 
 #endif // SENDER_DATA_POINT_HH

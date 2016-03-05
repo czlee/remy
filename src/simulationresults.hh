@@ -68,8 +68,8 @@ class SimulationRunDataPoint
 public:
   SimulationRunDataPoint( double seconds ) : seconds( seconds ), sender_data() {};
 
-  // expects pairs of < throughput, delay >
   void add_sender_data( std::vector< SenderDataPoint > );
+  void add_network_data( std::vector< unsigned int > );
 
 private:
   double seconds;
