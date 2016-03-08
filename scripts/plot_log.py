@@ -393,8 +393,8 @@ class DifferenceQuotientTimePlotGenerator(BaseTimePlotGenerator):
 
 class DifferenceTimePlotGenerator(BaseTimePlotGenerator):
     """Generates plots where the x-axis is time and the y-axis is the difference
-    between the current time and the previous time, skipped if the difference is
-    zero."""
+    between the value at the current time and value at the previous time,
+    skipped if the difference is zero."""
 
     plot_kwargs = {'linestyle': 'None', 'marker': 'x'}
 
@@ -430,14 +430,38 @@ class DifferenceTimePlotGenerator(BaseTimePlotGenerator):
         return t, y
 
 
+class InterEventTimePlotGenerator(DifferenceTimePlotGenerator):
+    """Generates plots where the x-axis is time and the y-axis is the difference
+    between the current event and the previous event. And event is considered
+    to have happened if the value at the current time is not equal to the
+    value at the previous time."""
+
+    plot_kwargs = {'linestyle': 'None', 'marker': 'x'}
+
+    def __init__(self, *args, **kwargs):
+        self.multiplier = kwargs.pop('multiplier', 1)
+        super(InterEventTimePlotGenerator, self).__init__(*args, **kwargs)
+
+    def get_values(self, run_data, index):
+        t_raw = run_data.get_times()
+        y_raw = run_data.get_raw_data(index, self.attrname)
+        t = []
+        y = []
+        t_last = None
+        for i in xrange(1, len(t_raw)):
+            d = y_raw[i] - y_raw[i-1]
+            if d != 0:
+                if t_last is not None:
+                    t.append(t_raw[i])
+                    y.append((t_raw[i] - t_last) * self.multiplier)
+                t_last = t_raw[i]
+        return t, y
+
 
 class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
     """Class to generate plots with two y-axis scales."""
     # TODO Separate two-scales plot functionality from time retrieval of
     # data.
-
-    legend_location = 'best'
-    file_extension = 'png'
 
     color1 = 'b'
     color2 = 'r'
@@ -660,6 +684,10 @@ if not args.animations_only:
         DifferenceTimePlotGenerator("packets_sent", "send times", senders=(0,)),
         DifferenceTimePlotGenerator("packets_received", "receive times", senders=(1,)),
         DifferenceTimePlotGenerator("packets_sent", "send times", senders=(1,)),
+        InterEventTimePlotGenerator("packets_received", "actual interreceive", senders=(0,), multiplier=1000),
+        InterEventTimePlotGenerator("packets_sent", "actual intersend", senders=(0,), multiplier=1000),
+        InterEventTimePlotGenerator("packets_received", "actual interreceive", senders=(1,), multiplier=1000),
+        InterEventTimePlotGenerator("packets_sent", "actual intersend", senders=(1,), multiplier=1000),
         SenderVersusSenderPlotGenerator("window_size", (0, 1)),
         SenderVersusSenderPlotGenerator("intersend_time", (0, 1)),
         SenderVersusSenderPlotGenerator("memory.rec_send_ewma", (0, 1)),
