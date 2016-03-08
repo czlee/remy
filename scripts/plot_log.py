@@ -58,7 +58,7 @@ class BasePlotGenerator(BaseFigureGenerator):
     """Abstract base class to generate plots."""
 
     legend_location = 'best'
-    file_extension = 'png'
+    file_extension = 'svg'
 
     def iter_plot_data(self, run_data):
         """Iterates through data to be plotted. The default implementation just
@@ -80,7 +80,7 @@ class BasePlotGenerator(BaseFigureGenerator):
         self.whiskers = whiskers
         self.fig = plt.figure()
         self.generate_plot(run_data)
-        self.fig.savefig(self.get_figfilename(), format='png', bbox_inches='tight')
+        self.fig.savefig(self.get_figfilename(), format='svg', bbox_inches='tight')
         plt.close(self.fig)
 
     def generate_plot(self, run_data):
