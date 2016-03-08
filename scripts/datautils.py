@@ -43,6 +43,47 @@ def find_whisker(tree, memory):
 class RunData(object):
     """Provides functions for extracting data from a SimulationRunData protobuf."""
 
+    RAW_ATTRIBUTES = [
+        "average_throughput",
+        "average_delay",
+        "sending_duration",
+        "packets_received",
+        "packets_sent",
+        "packets_in_flight",
+        "total_delay",
+        "window_size",
+        "intersend_time",
+        "sending",
+    ]
+
+    MEMORY_ATTRIBUTES = [
+        "rec_send_ewma",
+        "rec_rec_ewma",
+        "rtt_ratio",
+        "slow_rec_rec_ewma",
+    ]
+
+    WHISKER_ATTRIBUTES = [
+        "window_increment",
+        "window_multiple",
+        "intersend",
+    ]
+
+    DIFFERENCE_QUOTIENT_ATTRIBUTES = {
+        "throughput": ("packets_received", "sending_duration"),
+        "delay": ("total_delay", "packets_received"),
+    }
+
+    DIFFERENCE_ATTRIBUTES = {
+        "receive_times": ("packets_received",),
+        "send_times": ("packets_sent",),
+    }
+
+    INTEREVENT_ATTRIBUTES = {
+        "actual_interreceive": ("packets_received", 1000),
+        "actual_intersend": ("packets_sent", 1000),
+    }
+
     def __init__(self, pb, start_time=0, end_time=None, whiskers=None):
         """`pb` is a protobuf for a SimulationRunData.
         `whiskers` is a Whiskers object."""
@@ -57,19 +98,6 @@ class RunData(object):
     @property
     def num_senders(self):
         return self.pb.config.num_senders
-
-    def get_raw_data(self, sender, attrname):
-        """Retrieves the attribute specified by `attrname` from each data point,
-        for the sender with index `sender`, and returns it in a list."""
-        attrnames = attrname.split('.')
-        if attrnames[0] == "whisker": # special case
-            return self.get_whisker_data(sender, attrnames[1])
-
-        result = [getattr(point.sender_data[sender], attrnames[0]) for point in self.pb.point
-                if self._in_range(point)]
-        for attr in attrnames[1:]:
-            result = [getattr(point, attr) for point in result]
-        return result
 
     def get_times(self):
         """Returns a list of times, each time being a data point in the run
@@ -86,7 +114,50 @@ class RunData(object):
         return [tuple(data.sending for data in point.sender_data) for point in self.pb.point
                 if self._in_range(point)]
 
-    def get_whisker_data(self, sender, attrname):
+    def get_data(self, sender, name):
+        if name in self.RAW_ATTRIBUTES:
+            return self._get_raw_data(sender, name)
+        elif name in self.MEMORY_ATTRIBUTES:
+            return self._get_memory_data(sender, name)
+        elif name in self.WHISKER_ATTRIBUTES:
+            return self._get_whisker_data(sender, name)
+        elif name in self.DIFFERENCE_QUOTIENT_ATTRIBUTES:
+            return self._get_difference_quotient_data(sender, *self.DIFFERENCE_QUOTIENT_ATTRIBUTES[name])
+        else:
+            raise ValueError("Unknown attribute for get_data(): " + repr(name))
+
+    def get_time_data(self, sender, name):
+        """Retrieves the property specified by `name` from each data point,
+        for the sender with index `sender`, and returns it in a list."""
+        if name in self.RAW_ATTRIBUTES:
+            return self.get_times(), self._get_raw_data(sender, name)
+        elif name in self.MEMORY_ATTRIBUTES:
+            return self.get_times(), self._get_memory_data(sender, name)
+        elif name in self.WHISKER_ATTRIBUTES:
+            return self.get_times(), self._get_whisker_data(sender, name)
+        elif name in self.DIFFERENCE_QUOTIENT_ATTRIBUTES:
+            return self.get_times(), self._get_difference_quotient_data(sender, *self.DIFFERENCE_QUOTIENT_ATTRIBUTES[name])
+        elif name in self.DIFFERENCE_ATTRIBUTES:
+            return self._get_difference_data(sender, *self.DIFFERENCE_ATTRIBUTES[name])
+        elif name in self.INTEREVENT_ATTRIBUTES:
+            return self._get_interevent_data(sender, *self.INTEREVENT_ATTRIBUTES[name])
+        else:
+            raise ValueError("Unknown attribute for get_time_data(): " + repr(name))
+
+    def _get_raw_data(self, sender, attrname):
+        """Retrieves the attribute specified by `attrname` from each data point,
+        for the sender with index `sender`, and returns it in a list."""
+        return [getattr(point.sender_data[sender], attrname)
+                for point in self.pb.point if self._in_range(point)]
+
+    def _get_memory_data(self, sender, attrname):
+        """Retrieves the attribute of memory specified by `attrname` from each
+        data point, for the sender with index `sender`, and returns it in a
+        list."""
+        return [getattr(point.sender_data[sender].memory, attrname)
+                for point in self.pb.point if self._in_range(point)]
+
+    def _get_whisker_data(self, sender, attrname):
         """Returns a list, each element being the attribute of the whisker
         specified by `attrname` for the whisker that would be active at each a
         point in time. The times correspond to those returned by
@@ -101,6 +172,61 @@ class RunData(object):
             value = getattr(whisker, attrname)
             data.append(value)
         return data
+
+    def _get_difference_quotient_data(self, sender, numerator, denominator):
+        """Returns data of the form:
+            y[i] = (b[i] - b[i-1]) / (a[i] - a[i-1])
+        where a and b are both raw data."""
+        numerator_values = self._get_raw_data(sender, numerator)
+        denominator_values = self._get_raw_data(sender, denominator)
+        data = [0.0]
+        for i in xrange(1, len(numerator_values)):
+            n = numerator_values[i] - numerator_values[i-1]
+            d = denominator_values[i] - denominator_values[i-1]
+            if n == 0 and d == 0:
+                data.append(data[-1])
+            elif d == 0:
+                data.append(0.0)
+            else:
+                data.append(n/d)
+        return data
+
+    def _get_difference_data(self, sender, attrname):
+        """Returns data of the form:
+            y(t[n]) = x(t[n]) - x(t[n-1])
+        where x is raw data, and t[] are the times that x changes."""
+        t_raw = self.get_times()
+        y_raw = self._get_raw_data(sender, attrname)
+        t = []
+        y = []
+        for i in xrange(1, len(t_raw)):
+            d = y_raw[i] - y_raw[i-1]
+            if d != 0:
+                if t_raw[i] == t_raw[i-1]:
+                    y[-1] += d
+                else:
+                    t.append(t_raw[i])
+                    y.append(d)
+        return t, y
+
+    def _get_interevent_data(self, sender, attrname, multiplier=1):
+        """Returns data of the form:
+            y(t[n]) = t[n] - t[n-1]
+        where t[] are the times that the raw data changes."""
+        t_raw = self.get_times()
+        y_raw = self._get_raw_data(sender, attrname)
+        t = []
+        y = []
+        t_last = None
+        for i in xrange(1, len(t_raw)):
+            d = y_raw[i] - y_raw[i-1]
+            if d != 0:
+                if t_last is not None:
+                    t.append(t_raw[i])
+                    y.append((t_raw[i] - t_last) * multiplier)
+                t_last = t_raw[i]
+        return t, y
+
 
     def get_whisker_bounds(self, sender, attrname):
         """Returns two lists. The first list is the lower bound of the domain of

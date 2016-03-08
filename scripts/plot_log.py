@@ -39,6 +39,9 @@ class BaseFigureGenerator(object):
         self._plotsdir = kwargs.pop('plotsdir', self.plotsdir)
         self._start_time = kwargs.pop('start_time', self.start_time)
         self._end_time = kwargs.pop('end_time', self.end_time)
+        self._plot_kwargs = dict(self.plot_kwargs)
+        if "plot_kwargs" in kwargs:
+            self._plot_kwargs.update(kwargs.pop("plot_kwargs"))
         super(BaseFigureGenerator, self).__init__(**kwargs)
 
     def get_figfilename(self):
@@ -80,7 +83,7 @@ class BasePlotGenerator(BaseFigureGenerator):
         self.whiskers = whiskers
         self.fig = plt.figure()
         self.generate_plot(run_data)
-        self.fig.savefig(self.get_figfilename(), format='svg', bbox_inches='tight')
+        self.fig.savefig(self.get_figfilename(), format=self.file_extension, bbox_inches='tight')
         plt.close(self.fig)
 
     def generate_plot(self, run_data):
@@ -90,7 +93,7 @@ class BasePlotGenerator(BaseFigureGenerator):
         self.ax = self.fig.add_subplot(111)
 
         for x, y, label in self.iter_plot_data(run_data):
-            self.ax.plot(x, y, label=label, **self.plot_kwargs)
+            self.ax.plot(x, y, label=label, **self._plot_kwargs)
 
         self.ax.set_title(self.title)
         self.ax.set_xlabel(self.xlabel)
@@ -165,7 +168,7 @@ class BaseSingleAnimationGenerator(BaseAnimationGenerator):
         self.ax.set_xlim([0, xmax])
         self.ax.set_ylim([0, ymax])
 
-        self._line = self.ax.plot([], [], **self.plot_kwargs)[0]
+        self._line = self.ax.plot([], [], **self._plot_kwargs)[0]
         self._text = self.ax.text(0.05, 0.95, '', transform=self.ax.transAxes)
         self._circles = []
         for i in range(run_data.config.num_senders):
@@ -229,7 +232,7 @@ class BaseGridAnimationGenerator(BaseAnimationGenerator):
         for i in range(nvars):
             for j in range(nvars):
                 ax = self.fig.add_subplot(nvars, nvars, i*nvars+j+1)
-                line = ax.plot([], [], **self.plot_kwargs)[0]
+                line = ax.plot([], [], **self._plot_kwargs)[0]
                 self._lines.append(line)
 
                 ax.set_xlim([0, maxes[j]])
@@ -293,13 +296,20 @@ class TimePlotMixin(object):
             ax.fill([t1, t1, t2, t2], [u, ymax, ymax, u], color=(0.75, 0.75, 0.75))
 
 
-class BaseTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
-    """Abstract base class to generate plots where the x-axis is time."""
+class TimePlotGenerator(TimePlotMixin, BasePlotGenerator):
+    """Generates plots where the x-axis is time and the y-axis is taken directly
+    from raw data."""
 
-    def __init__(self, senders=None, **kwargs):
+    def __init__(self, attrname, unit=None, senders=None, **kwargs):
+        self.attrname = attrname
+        self.figfilename = attrname
+
+        pretty_name = pretty(attrname)
+        self.ylabel = pretty_name
+        if unit:
+            self.ylabel += " ({})".format(unit)
+        self.title = pretty_name
         self.senders = senders
-
-        super(BaseTimePlotGenerator, self).__init__(**kwargs)
 
         if self.senders is not None:
             if len(self.senders) == 1:
@@ -309,104 +319,13 @@ class BaseTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
                 self.title += ": senders {}".format(", ".join([str(x) for x in self.senders]))
                 self.figfilename += "_senders_{}".format("_".join([str(x) for x in self.senders]))
 
+        super(TimePlotGenerator, self).__init__(**kwargs)
+
     def _senders(self, run_data):
         return self.senders if self.senders is not None else range(run_data.num_senders)
 
     def get_values(self, run_data, index):
-        raise NotImplementedError("Subclasses must implement get_values()")
-
-    def iter_plot_data(self, run_data):
-        x = run_data.get_times()
-        for i in self._senders(run_data):
-            y = self.get_values(run_data, i)
-            label = "sender {:d}".format(i)
-            yield x, y, label
-
-    def generate_plot(self, run_data):
-        super(BaseTimePlotGenerator, self).generate_plot(run_data)
-        if self._overlay_whiskers and self.senders is not None and len(self.senders) == 1:
-            sender = self.senders[0]
-            self.plot_whisker_change_times(self.ax, run_data, sender)
-
-
-class RawDataTimePlotGenerator(BaseTimePlotGenerator):
-    """Generates plots where the x-axis is time and the y-axis is taken directly
-    from raw data."""
-
-    def __init__(self, attrname, unit=None, **kwargs):
-        self.attrname = attrname
-        self.figfilename = attrname
-
-        pretty_name = pretty(attrname)
-        self.ylabel = pretty_name
-        if unit:
-            self.ylabel += " ({})".format(unit)
-        self.title = pretty_name
-
-        super(RawDataTimePlotGenerator, self).__init__(**kwargs)
-
-    def get_values(self, run_data, index):
-        return run_data.get_raw_data(index, self.attrname)
-
-    def generate_plot(self, run_data):
-        super(RawDataTimePlotGenerator, self).generate_plot(run_data)
-        if self._overlay_whiskers and self.senders is not None and len(self.senders) == 1:
-            sender = self.senders[0]
-            if self.attrname.startswith("memory."):
-                ylim = self.ax.get_ylim()
-                attrname = self.attrname[7:]
-                self.plot_whisker_bounds(self.ax, run_data, sender, attrname)
-                self.ax.set_ylim(ylim)
-
-
-class DifferenceQuotientTimePlotGenerator(BaseTimePlotGenerator):
-    """Generates plots where the x-axis is time and the y-axis is of the form:
-        y[i] = (b[i] - b[i-1]) / (a[i] - a[i-1])
-    where a and b are both raw data."""
-
-    def __init__(self, numerator, denominator, title, unit=None, **kwargs):
-        self.numerator_attrname = numerator
-        self.denominator_attrname = denominator
-        self.figfilename = title.replace(" ", "_")
-        self.title = title.capitalize()
-        self.ylabel = title.capitalize()
-        if unit:
-            self.ylabel += " ({})".format(unit)
-
-        super(DifferenceQuotientTimePlotGenerator, self).__init__(**kwargs)
-
-    def get_values(self, run_data, index):
-        numerator_values = run_data.get_raw_data(index, self.numerator_attrname)
-        denominator_values = run_data.get_raw_data(index, self.denominator_attrname)
-        data = [0.0]
-        for i in xrange(1, len(numerator_values)):
-            n = numerator_values[i] - numerator_values[i-1]
-            d = denominator_values[i] - denominator_values[i-1]
-            if n == 0 and d == 0:
-                data.append(data[-1])
-            elif d == 0:
-                data.append(0.0)
-            else:
-                data.append(n/d)
-        return data
-
-
-class DifferenceTimePlotGenerator(BaseTimePlotGenerator):
-    """Generates plots where the x-axis is time and the y-axis is the difference
-    between the value at the current time and value at the previous time,
-    skipped if the difference is zero."""
-
-    plot_kwargs = {'linestyle': 'None', 'marker': 'x'}
-
-    def __init__(self, attrname, title, unit=None, **kwargs):
-        self.attrname = attrname
-        self.figfilename = title.replace(" ", "_")
-        self.title = title.capitalize()
-        self.ylabel = title.capitalize()
-        if unit:
-            self.ylabel += " ({})".format(unit)
-
-        super(DifferenceTimePlotGenerator, self).__init__(**kwargs)
+        return run_data.get_time_data(index, self.attrname)
 
     def iter_plot_data(self, run_data):
         for i in self._senders(run_data):
@@ -414,48 +333,16 @@ class DifferenceTimePlotGenerator(BaseTimePlotGenerator):
             label = "sender {:d}".format(i)
             yield x, y, label
 
-    def get_values(self, run_data, index):
-        t_raw = run_data.get_times()
-        y_raw = run_data.get_raw_data(index, self.attrname)
-        t = []
-        y = []
-        for i in xrange(1, len(t_raw)):
-            d = y_raw[i] - y_raw[i-1]
-            if d != 0:
-                if t_raw[i] == t_raw[i-1]:
-                    y[-1] += d
-                else:
-                    t.append(t_raw[i])
-                    y.append(d)
-        return t, y
+    def generate_plot(self, run_data):
+        super(TimePlotGenerator, self).generate_plot(run_data)
+        if self._overlay_whiskers and self.senders is not None and len(self.senders) == 1:
+            sender = self.senders[0]
+            self.plot_whisker_change_times(self.ax, run_data, sender)
 
-
-class InterEventTimePlotGenerator(DifferenceTimePlotGenerator):
-    """Generates plots where the x-axis is time and the y-axis is the difference
-    between the current event and the previous event. And event is considered
-    to have happened if the value at the current time is not equal to the
-    value at the previous time."""
-
-    plot_kwargs = {'linestyle': 'None', 'marker': 'x'}
-
-    def __init__(self, *args, **kwargs):
-        self.multiplier = kwargs.pop('multiplier', 1)
-        super(InterEventTimePlotGenerator, self).__init__(*args, **kwargs)
-
-    def get_values(self, run_data, index):
-        t_raw = run_data.get_times()
-        y_raw = run_data.get_raw_data(index, self.attrname)
-        t = []
-        y = []
-        t_last = None
-        for i in xrange(1, len(t_raw)):
-            d = y_raw[i] - y_raw[i-1]
-            if d != 0:
-                if t_last is not None:
-                    t.append(t_raw[i])
-                    y.append((t_raw[i] - t_last) * self.multiplier)
-                t_last = t_raw[i]
-        return t, y
+            if self.attrname in datautils.RunData.MEMORY_ATTRIBUTES:
+                ylim = self.ax.get_ylim()
+                self.plot_whisker_bounds(self.ax, run_data, sender, self.attrname)
+                self.ax.set_ylim(ylim)
 
 
 class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
@@ -481,23 +368,25 @@ class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
         SimulationRunData instance."""
 
         ax1 = self.fig.add_subplot(111)
-        t = run_data.get_times()
-        y1 = run_data.get_raw_data(self.spec1[1], self.spec1[0])
-        y2 = run_data.get_raw_data(self.spec2[1], self.spec2[0])
+        t1, y1 = run_data.get_time_data(self.spec1[1], self.spec1[0])
+        t2, y2 = run_data.get_time_data(self.spec2[1], self.spec2[0])
 
-        ax1.plot(t, y1, color=self.color1)
+        min_t = min(t1 + t2)
+        max_t = max(t1 + t2)
+
+        ax1.plot(t1, y1, color=self.color1)
         ax1.set_xlabel('Time (s)')
         ax1.set_ylabel(self.title1, color=self.color1)
         for tl in ax1.get_yticklabels():
             tl.set_color(self.color1)
-        ax1.set_xlim([min(t), max(t)])
+        ax1.set_xlim([min_t, max_t])
 
         ax2 = ax1.twinx()
-        ax2.plot(t, y2, color=self.color2)
+        ax2.plot(t2, y2, color=self.color2)
         ax2.set_ylabel(self.title2, color=self.color2)
         for tl in ax2.get_yticklabels():
             tl.set_color(self.color2)
-        ax2.set_xlim([min(t), max(t)])
+        ax2.set_xlim([min_t, max_t])
 
         if self._overlay_whiskers:
             self.plot_whisker_change_times(ax1, run_data, self.spec1[1])
@@ -528,8 +417,8 @@ class SenderVersusSenderMixin(object):
         super(SenderVersusSenderMixin, self).__init__(**kwargs)
 
     def get_plot_data(self, run_data):
-        x = run_data.get_raw_data(self.indices[0], self.attrname)
-        y = run_data.get_raw_data(self.indices[1], self.attrname)
+        x = run_data.get_data(self.indices[0], self.attrname)
+        y = run_data.get_data(self.indices[1], self.attrname)
         return x, y
 
 
@@ -552,8 +441,8 @@ class SingleSenderParametricMixin(object):
         super(SingleSenderParametricMixin, self).__init__(**kwargs)
 
     def get_plot_data(self, run_data):
-        x = run_data.get_raw_data(self.index, self.attrnames[0])
-        y = run_data.get_raw_data(self.index, self.attrnames[1])
+        x = run_data.get_data(self.index, self.attrnames[0])
+        y = run_data.get_data(self.index, self.attrnames[1])
         return x, y
 
 
@@ -654,64 +543,60 @@ generators = []
 
 if not args.animations_only:
     generators.extend([
-        RawDataTimePlotGenerator("average_throughput"),
-        RawDataTimePlotGenerator("average_delay", "ms"),
-        RawDataTimePlotGenerator("sending_duration", "ms"),
-        RawDataTimePlotGenerator("packets_received", senders=(0,)),
-        RawDataTimePlotGenerator("packets_sent", senders=(0,)),
-        RawDataTimePlotGenerator("packets_in_flight", senders=(0,)),
-        RawDataTimePlotGenerator("packets_received", senders=(1,)),
-        RawDataTimePlotGenerator("packets_sent", senders=(1,)),
-        RawDataTimePlotGenerator("packets_in_flight", senders=(1,)),
-        RawDataTimePlotGenerator("total_delay", "ms"),
-        RawDataTimePlotGenerator("window_size"),
-        RawDataTimePlotGenerator("intersend_time", "ms"),
-        RawDataTimePlotGenerator("memory.rec_send_ewma", "ms", senders=(0,)),
-        RawDataTimePlotGenerator("memory.rec_rec_ewma", "ms", senders=(0,)),
-        RawDataTimePlotGenerator("memory.rtt_ratio", "ms", senders=(0,)),
-        RawDataTimePlotGenerator("memory.slow_rec_rec_ewma", "ms", senders=(0,)),
-        RawDataTimePlotGenerator("memory.rec_send_ewma", "ms", senders=(1,)),
-        RawDataTimePlotGenerator("memory.rec_rec_ewma", "ms", senders=(1,)),
-        RawDataTimePlotGenerator("memory.rtt_ratio", "ms", senders=(1,)),
-        RawDataTimePlotGenerator("memory.slow_rec_rec_ewma", "ms", senders=(1,)),
-        RawDataTimePlotGenerator("sending"),
-        RawDataTimePlotGenerator("whisker.window_increment"),
-        RawDataTimePlotGenerator("whisker.window_multiple"),
-        RawDataTimePlotGenerator("whisker.intersend"),
-        DifferenceQuotientTimePlotGenerator("packets_received", "sending_duration", "throughput"),
-        DifferenceQuotientTimePlotGenerator("total_delay", "packets_received", "delay"),
-        DifferenceTimePlotGenerator("packets_received", "receive times", senders=(0,)),
-        DifferenceTimePlotGenerator("packets_sent", "send times", senders=(0,)),
-        DifferenceTimePlotGenerator("packets_received", "receive times", senders=(1,)),
-        DifferenceTimePlotGenerator("packets_sent", "send times", senders=(1,)),
-        InterEventTimePlotGenerator("packets_received", "actual interreceive", senders=(0,), multiplier=1000),
-        InterEventTimePlotGenerator("packets_sent", "actual intersend", senders=(0,), multiplier=1000),
-        InterEventTimePlotGenerator("packets_received", "actual interreceive", senders=(1,), multiplier=1000),
-        InterEventTimePlotGenerator("packets_sent", "actual intersend", senders=(1,), multiplier=1000),
+        TimePlotGenerator("average_throughput"),
+        TimePlotGenerator("average_delay", "ms"),
+        TimePlotGenerator("sending_duration", "ms"),
+        TimePlotGenerator("packets_received", senders=(0,)),
+        TimePlotGenerator("packets_sent", senders=(0,)),
+        TimePlotGenerator("packets_in_flight", senders=(0,)),
+        TimePlotGenerator("packets_received", senders=(1,)),
+        TimePlotGenerator("packets_sent", senders=(1,)),
+        TimePlotGenerator("packets_in_flight", senders=(1,)),
+        TimePlotGenerator("total_delay", "ms"),
+        TimePlotGenerator("window_size"),
+        TimePlotGenerator("intersend_time", "ms"),
+        TimePlotGenerator("rec_send_ewma", "ms", senders=(0,)),
+        TimePlotGenerator("rec_rec_ewma", "ms", senders=(0,)),
+        TimePlotGenerator("rtt_ratio", "ms", senders=(0,)),
+        TimePlotGenerator("slow_rec_rec_ewma", "ms", senders=(0,)),
+        TimePlotGenerator("rec_send_ewma", "ms", senders=(1,)),
+        TimePlotGenerator("rec_rec_ewma", "ms", senders=(1,)),
+        TimePlotGenerator("rtt_ratio", "ms", senders=(1,)),
+        TimePlotGenerator("slow_rec_rec_ewma", "ms", senders=(1,)),
+        TimePlotGenerator("sending"),
+        TimePlotGenerator("window_increment"),
+        TimePlotGenerator("window_multiple"),
+        TimePlotGenerator("intersend"),
+        TimePlotGenerator("throughput"),
+        TimePlotGenerator("delay"),
+        TimePlotGenerator("receive_times", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
+        TimePlotGenerator("send_times", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
+        TimePlotGenerator("actual_interreceive", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
+        TimePlotGenerator("actual_intersend", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
         SenderVersusSenderPlotGenerator("window_size", (0, 1)),
         SenderVersusSenderPlotGenerator("intersend_time", (0, 1)),
-        SenderVersusSenderPlotGenerator("memory.rec_send_ewma", (0, 1)),
-        SenderVersusSenderPlotGenerator("memory.rec_rec_ewma", (0, 1)),
-        SenderVersusSenderPlotGenerator("memory.rtt_ratio", (0, 1)),
-        SenderVersusSenderPlotGenerator("memory.slow_rec_rec_ewma", (0, 1)),
+        SenderVersusSenderPlotGenerator("rec_send_ewma", (0, 1)),
+        SenderVersusSenderPlotGenerator("rec_rec_ewma", (0, 1)),
+        SenderVersusSenderPlotGenerator("rtt_ratio", (0, 1)),
+        SenderVersusSenderPlotGenerator("slow_rec_rec_ewma", (0, 1)),
         SingleSenderParametricPlotGenerator(("window_size", "intersend_time"), 0),
         SingleSenderParametricPlotGenerator(("window_size", "intersend_time"), 1),
-        SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 0),
-        SingleSenderParametricPlotGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 1),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rec_rec_ewma", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("memory.rtt_ratio", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("memory.slow_rec_rec_ewma", 0)),
-        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("whisker.intersend", 0)),
-        TwoScalesTimePlotGenerator(("memory.rtt_ratio", 0), ("window_size", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_multiple", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_multiple", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_rec_ewma", 0), ("whisker.window_increment", 0)),
-        TwoScalesTimePlotGenerator(("memory.rec_send_ewma", 0), ("whisker.window_increment", 0)),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.window_multiple", 0)),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("whisker.intersend", 0)),
-        TwoScalesTimePlotGenerator(("whisker.intersend", 0), ("whisker.window_multiple", 0)),
-        TwoScalesTimePlotGenerator(("whisker.window_increment", 0), ("window_size", 0)),
-        TwoScalesTimePlotGenerator(("whisker.window_multiple", 0), ("window_size", 0)),
+        SingleSenderParametricPlotGenerator(("rec_send_ewma", "rec_rec_ewma"), 0),
+        SingleSenderParametricPlotGenerator(("rec_send_ewma", "rec_rec_ewma"), 1),
+        TwoScalesTimePlotGenerator(("rec_send_ewma", 0), ("rec_rec_ewma", 0)),
+        TwoScalesTimePlotGenerator(("rec_send_ewma", 0), ("rtt_ratio", 0)),
+        TwoScalesTimePlotGenerator(("rec_rec_ewma", 0), ("slow_rec_rec_ewma", 0)),
+        TwoScalesTimePlotGenerator(("rtt_ratio", 0), ("intersend", 0)),
+        TwoScalesTimePlotGenerator(("rtt_ratio", 0), ("window_size", 0)),
+        TwoScalesTimePlotGenerator(("rec_rec_ewma", 0), ("window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("rec_send_ewma", 0), ("window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("rec_rec_ewma", 0), ("window_increment", 0)),
+        TwoScalesTimePlotGenerator(("rec_send_ewma", 0), ("window_increment", 0)),
+        TwoScalesTimePlotGenerator(("window_increment", 0), ("window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("window_increment", 0), ("intersend", 0)),
+        TwoScalesTimePlotGenerator(("intersend", 0), ("window_multiple", 0)),
+        TwoScalesTimePlotGenerator(("window_increment", 0), ("window_size", 0)),
+        TwoScalesTimePlotGenerator(("window_multiple", 0), ("window_size", 0)),
         TwoScalesTimePlotGenerator(("window_size", 0), ("intersend_time", 0)),
     ])
 
@@ -719,23 +604,23 @@ if not args.plots_only:
     generators.extend([
         SenderVersusSenderAnimationGenerator("window_size", (0, 1)),
         SenderVersusSenderAnimationGenerator("intersend_time", (0, 1)),
-        SenderVersusSenderAnimationGenerator("memory.rec_send_ewma", (0, 1)),
-        SenderVersusSenderAnimationGenerator("memory.rec_rec_ewma", (0, 1)),
-        SenderVersusSenderAnimationGenerator("memory.rtt_ratio", (0, 1)),
-        SenderVersusSenderAnimationGenerator("memory.slow_rec_rec_ewma", (0, 1)),
+        SenderVersusSenderAnimationGenerator("rec_send_ewma", (0, 1)),
+        SenderVersusSenderAnimationGenerator("rec_rec_ewma", (0, 1)),
+        SenderVersusSenderAnimationGenerator("rtt_ratio", (0, 1)),
+        SenderVersusSenderAnimationGenerator("slow_rec_rec_ewma", (0, 1)),
         SingleSenderParametricAnimationGenerator(("window_size", "intersend_time"), 0),
         SingleSenderParametricAnimationGenerator(("window_size", "intersend_time"), 1),
-        SingleSenderParametricAnimationGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 0),
-        SingleSenderParametricAnimationGenerator(("memory.rec_send_ewma", "memory.rec_rec_ewma"), 1),
+        SingleSenderParametricAnimationGenerator(("rec_send_ewma", "rec_rec_ewma"), 0),
+        SingleSenderParametricAnimationGenerator(("rec_send_ewma", "rec_rec_ewma"), 1),
         MultiVariableParametricGridAnimationGenerator(
-            ("memory.rec_send_ewma", 0),
-            ("memory.rec_send_ewma", 1),
-            ("memory.rec_rec_ewma", 0),
-            ("memory.rec_rec_ewma", 1),
-            ("memory.rtt_ratio", 0),
-            ("memory.rtt_ratio", 1),
-            ("memory.slow_rec_rec_ewma", 0),
-            ("memory.slow_rec_rec_ewma", 1),
+            ("rec_send_ewma", 0),
+            ("rec_send_ewma", 1),
+            ("rec_rec_ewma", 0),
+            ("rec_rec_ewma", 1),
+            ("rtt_ratio", 0),
+            ("rtt_ratio", 1),
+            ("slow_rec_rec_ewma", 0),
+            ("slow_rec_rec_ewma", 1),
         )
     ])
 
