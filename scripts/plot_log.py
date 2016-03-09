@@ -597,6 +597,7 @@ if not args.animations_only:
         TimePlotGenerator("actual_intersend", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
         TimePlotGenerator("actual_intersend", "intersend", senders=0, plot_kwargs=[{'linestyle': 'None', 'marker': 'x'}, {}]),
         TimePlotGenerator("actual_intersend", "intersend_time", senders=0, plot_kwargs=[{'linestyle': 'None', 'marker': 'x'}, {}]),
+        TimePlotGenerator("packets_in_flight", "window_size", senders=0),
         SenderVersusSenderPlotGenerator("window_size", (0, 1)),
         SenderVersusSenderPlotGenerator("intersend_time", (0, 1)),
         SenderVersusSenderPlotGenerator("rec_send_ewma", (0, 1)),
