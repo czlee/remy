@@ -202,7 +202,7 @@ class RunData(object):
         for i in xrange(1, len(t_raw)):
             d = y_raw[i] - y_raw[i-1]
             if d != 0:
-                if t_raw[i] == t_raw[i-1]:
+                if t_raw[i] == t_raw[i-1] and len(y) > 0:
                     y[-1] += d
                 else:
                     t.append(t_raw[i])

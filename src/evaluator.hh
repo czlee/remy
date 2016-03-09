@@ -23,20 +23,17 @@ public:
     double score;
     std::vector< std::pair< NetConfig, std::vector< std::pair< double, double > > > > throughputs_delays;
     T used_actions;
-    SimulationResults<T> simulation_results;
 
-    Outcome( T actions ) : score( 0 ), throughputs_delays(), used_actions( actions ),
-        simulation_results( actions ) {}
+    Outcome( T actions ) : score( 0 ), throughputs_delays(), used_actions( actions ) {}
 
     Outcome( const AnswerBuffers::Outcome & dna );
 
-    AnswerBuffers::Outcome DNA( void ) const; // does not include simulation_results
+    AnswerBuffers::Outcome DNA( void ) const;
   };
 
 private:
   const unsigned int _prng_seed;
   unsigned int _tick_count;
-  double _log_interval_ticks;
 
   std::vector< NetConfig > _configs;
 
@@ -49,8 +46,7 @@ public:
 
   Outcome score( T & run_actions,
 		 const bool trace = false,
-		 const double carefulness = 1,
-     const bool log_simulation = false ) const;
+		 const double carefulness = 1 ) const;
 
   static Evaluator::Outcome parse_problem_and_evaluate( const ProblemBuffers::Problem & problem );
 
@@ -58,9 +54,7 @@ public:
 			const unsigned int prng_seed,
 			const std::vector<NetConfig> & configs,
 			const bool trace,
-			const unsigned int ticks_to_run,
-      const double _log_interval = 1000,
-      const bool log_simulation = false );
+			const unsigned int ticks_to_run );
 };
 
 #endif

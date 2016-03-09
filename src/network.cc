@@ -41,12 +41,9 @@ void Network<Gang1Type, Gang2Type>::tick( void )
 }
 
 template <class Gang1Type, class Gang2Type>
-void Network<Gang1Type, Gang2Type>::run_simulation( const double & duration,
-                                                        SimulationRunData * run_data,
-                                                        const double interval )
+void Network<Gang1Type, Gang2Type>::run_simulation( const double & duration )
 {
   assert( _tickno == 0 );
-  double next_log_time = interval;
 
   while ( _tickno < duration ) {
     /* find element with soonest event */
@@ -54,13 +51,6 @@ void Network<Gang1Type, Gang2Type>::run_simulation( const double & duration,
 			_link.next_event_time( _tickno ) ),
 		   min( _delay.next_event_time( _tickno ),
 			_rec.next_event_time( _tickno ) ) );
-
-    if ( run_data != NULL && _tickno > next_log_time ) {
-      SimulationRunDataPoint & datum = run_data->add_datum( _tickno / 1000.0 );
-      datum.add_sender_data( _senders.statistics_for_log() );
-      datum.add_network_data( packets_in_flight() );
-      next_log_time += interval;
-    }
 
     if ( _tickno > duration ) break;
     assert( _tickno < std::numeric_limits<double>::max() );
@@ -93,6 +83,36 @@ void Network<Gang1Type, Gang2Type>::run_simulation_until( const double tick_limi
     _tickno = next_tickno;
 
     tick();
+  }
+}
+
+template <class Gang1Type, class Gang2Type>
+void Network<Gang1Type, Gang2Type>::run_simulation_with_logging( const double & duration,
+                                                                 SimulationRunData & run_data,
+                                                                 const double interval )
+{
+  assert( _tickno == 0 );
+  double next_log_time = interval;
+
+  while ( _tickno < duration ) {
+    /* find element with soonest event */
+    _tickno = min( min( _senders.next_event_time( _tickno ),
+      _link.next_event_time( _tickno ) ),
+       min( _delay.next_event_time( _tickno ),
+      _rec.next_event_time( _tickno ) ) );
+
+    if ( _tickno > duration ) break;
+    assert( _tickno < std::numeric_limits<double>::max() );
+
+    tick();
+
+    if ( _tickno > next_log_time ) {
+      SimulationRunDataPoint & datum = run_data.add_datum( _tickno / 1000.0 );
+      datum.add_sender_data( _senders.statistics_for_log() );
+      datum.add_network_data( packets_in_flight() );
+      next_log_time += interval;
+    }
+
   }
 }
 

@@ -29,6 +29,7 @@ message SimulationsData {
  */
 message SimulationRunData {
     optional RemyBuffers.NetConfig config = 11;
+    optional float log_interval_ticks = 13;
     repeated SimulationRunDataPoint point = 12; // one for each timestamp
 }
 

@@ -1,10 +1,10 @@
 #include "simulationresults.hh"
 
 template <typename ActionTree>
-SimulationRunData & SimulationResults< ActionTree >::add_run_data( const NetConfig & config )
+SimulationRunData & SimulationResults< ActionTree >::add_run_data( const NetConfig & config, double interval )
 {
 
-  run_data.emplace_back( config );
+  run_data.emplace_back( config, interval );
   return run_data.back();
 }
 
@@ -49,11 +49,11 @@ SimulationResultBuffers::SimulationsData SimulationResults< ActionTree >::DNA( v
   ProblemBuffers::ProblemSettings settings;
   settings.set_prng_seed( prng_seed );
   settings.set_tick_count( tick_count );
-  settings.set_log_interval_ticks( log_interval_ticks );
   ret.mutable_settings()->CopyFrom( settings );
 
   for ( const auto &run : run_data ) {
     SimulationResultBuffers::SimulationRunData * run_data_pb = ret.add_run_data();
+    run_data_pb->set_log_interval_ticks( run.interval );
     run_data_pb->mutable_config()->CopyFrom( run.config.DNA() );
 
     for ( const auto &datum : run.data ) {

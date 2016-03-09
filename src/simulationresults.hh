@@ -22,7 +22,7 @@ public:
   SimulationResultBuffers::SimulationsData DNA( void ) const;
 
   // Adds a run and returns a reference to it
-  SimulationRunData & add_run_data( const NetConfig & config );
+  SimulationRunData & add_run_data( const NetConfig & config, double interval );
 
   void set_prng_seed( unsigned int prng_seed ) { this->prng_seed = prng_seed; }
   void set_tick_count( unsigned int tick_count ) { this->tick_count = tick_count; }
@@ -50,13 +50,14 @@ class SimulationRunData
   friend class SimulationResults< FinTree >;
 
 public:
-  SimulationRunData( NetConfig config ) : config( config ), data() {};
+  SimulationRunData( NetConfig config, double interval ) : config( config ), interval( interval ), data() {};
 
   // Adds a data point and returns a reference to it
   struct SimulationRunDataPoint & add_datum( double seconds );
 
 private:
   NetConfig config;
+  double interval;
   std::vector< struct SimulationRunDataPoint > data;
 };
 

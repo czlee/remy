@@ -182,8 +182,6 @@ int main(int argc, char *argv[]) {
 
   update_config_with_value(input_config, &RemyBuffers::ConfigRange::set_simulation_ticks,
       argc, argv, "ticks", mandatory);
-  update_config_with_value(input_config, &RemyBuffers::ConfigRange::set_simulation_log_interval_ticks,
-      argc, argv, "interval", mandatory);
 
   if ( !(infinite_buffers) ) {
     update_config_with_range(input_config.mutable_buffer_size(), argc, argv, "buf_size", mandatory);

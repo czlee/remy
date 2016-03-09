@@ -9,7 +9,7 @@ from textwrap import wrap
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from senderrunner_runner import SenderRunnerRunner
+from remy_tool_runner import SenderLoggerRunner
 from matplotlib.patches import Circle
 from matplotlib.animation import FuncAnimation
 import utils
@@ -39,29 +39,52 @@ class BaseFigureGenerator(object):
         self._plotsdir = kwargs.pop('plotsdir', self.plotsdir)
         self._start_time = kwargs.pop('start_time', self.start_time)
         self._end_time = kwargs.pop('end_time', self.end_time)
-        self._plot_kwargs = dict(self.plot_kwargs)
-        if "plot_kwargs" in kwargs:
-            self._plot_kwargs.update(kwargs.pop("plot_kwargs"))
+        self._plot_kwargs = kwargs.pop('plot_kwargs', None)
         super(BaseFigureGenerator, self).__init__(**kwargs)
 
-    def get_figfilename(self):
+    def get_figfilename(self, extension=None):
+        """Returns the file name to which the figure should be saved.
+        Subclasses for which self.file_extension is a list should iterate over
+        self.file_extension and call this with the `extension` argument."""
+        if extension is None:
+            extension = self.file_extension
+        if not isinstance(extension, str):
+            raise ValueError("Bad file extension: " + repr(extension))
         name = os.path.join(self._plotsdir, self.figfilename)
-        if not name.endswith("." + self.file_extension):
-            name += "." + self.file_extension
+        if not name.endswith("." + extension):
+            name += "." + extension
         return name
+
+    def get_plot_kwargs(self, i=None):
+        """Returns the keyword arguments that should be applied to plots, for
+        the graph of index i."""
+        kwargs = dict(self.plot_kwargs)
+        if isinstance(self._plot_kwargs, list):
+            if i is None:
+                raise ValueError("For this generator, plot_kwargs must be a dict, not a list of dicts")
+            kwargs.update(self._plot_kwargs[i])
+        elif isinstance(self._plot_kwargs, dict):
+            kwargs.update(self._plot_kwargs)
+        elif self._plot_kwargs is not None:
+            raise TypeError("plot_kwargs must be a list of dicts, or a dict")
+        return kwargs
 
     def generate(self, run_data):
         raise NotImplementedError("Subclasses must implement generate()")
 
     def _print_generating_line(self):
-        print("Generating {}...".format(self.get_figfilename()))
+        if isinstance(self.file_extension, list) or isinstance(self.file_extension, tuple):
+            extension = "(" + ",".join(self.file_extension) + ")"
+        else:
+            extension = None
+        print("Generating {}...".format(self.get_figfilename(extension)))
 
 
 class BasePlotGenerator(BaseFigureGenerator):
     """Abstract base class to generate plots."""
 
     legend_location = 'best'
-    file_extension = 'svg'
+    file_extension = ['svg', 'png']
 
     def iter_plot_data(self, run_data):
         """Iterates through data to be plotted. The default implementation just
@@ -83,7 +106,8 @@ class BasePlotGenerator(BaseFigureGenerator):
         self.whiskers = whiskers
         self.fig = plt.figure()
         self.generate_plot(run_data)
-        self.fig.savefig(self.get_figfilename(), format=self.file_extension, bbox_inches='tight')
+        for ext in self.file_extension:
+            self.fig.savefig(self.get_figfilename(ext), format=ext, bbox_inches='tight')
         plt.close(self.fig)
 
     def generate_plot(self, run_data):
@@ -92,8 +116,8 @@ class BasePlotGenerator(BaseFigureGenerator):
 
         self.ax = self.fig.add_subplot(111)
 
-        for x, y, label in self.iter_plot_data(run_data):
-            self.ax.plot(x, y, label=label, **self._plot_kwargs)
+        for i, (x, y, label) in enumerate(self.iter_plot_data(run_data)):
+            self.ax.plot(x, y, label=label, **self.get_plot_kwargs(i))
 
         self.ax.set_title(self.title)
         self.ax.set_xlabel(self.xlabel)
@@ -168,7 +192,7 @@ class BaseSingleAnimationGenerator(BaseAnimationGenerator):
         self.ax.set_xlim([0, xmax])
         self.ax.set_ylim([0, ymax])
 
-        self._line = self.ax.plot([], [], **self._plot_kwargs)[0]
+        self._line = self.ax.plot([], [], **self.get_plot_kwargs())[0]
         self._text = self.ax.text(0.05, 0.95, '', transform=self.ax.transAxes)
         self._circles = []
         for i in range(run_data.config.num_senders):
@@ -232,7 +256,7 @@ class BaseGridAnimationGenerator(BaseAnimationGenerator):
         for i in range(nvars):
             for j in range(nvars):
                 ax = self.fig.add_subplot(nvars, nvars, i*nvars+j+1)
-                line = ax.plot([], [], **self._plot_kwargs)[0]
+                line = ax.plot([], [], **self.get_plot_kwargs())[0]
                 self._lines.append(line)
 
                 ax.set_xlim([0, maxes[j]])
@@ -300,16 +324,20 @@ class TimePlotGenerator(TimePlotMixin, BasePlotGenerator):
     """Generates plots where the x-axis is time and the y-axis is taken directly
     from raw data."""
 
-    def __init__(self, attrname, unit=None, senders=None, **kwargs):
-        self.attrname = attrname
-        self.figfilename = attrname
+    def __init__(self, *attrnames, **kwargs):
 
-        pretty_name = pretty(attrname)
+        self.attrnames = attrnames
+        self.figfilename = "__".join(attrnames)
+
+        pretty_name = ", ".join([pretty(attrname) for attrname in attrnames])
+        unit = kwargs.pop('unit', None)
         self.ylabel = pretty_name
         if unit:
             self.ylabel += " ({})".format(unit)
         self.title = pretty_name
-        self.senders = senders
+        self.senders = kwargs.pop('senders', None)
+        if isinstance(self.senders, int):
+            self.senders = [self.senders]
 
         if self.senders is not None:
             if len(self.senders) == 1:
@@ -324,14 +352,17 @@ class TimePlotGenerator(TimePlotMixin, BasePlotGenerator):
     def _senders(self, run_data):
         return self.senders if self.senders is not None else range(run_data.num_senders)
 
-    def get_values(self, run_data, index):
-        return run_data.get_time_data(index, self.attrname)
-
     def iter_plot_data(self, run_data):
-        for i in self._senders(run_data):
-            x, y = self.get_values(run_data, i)
-            label = "sender {:d}".format(i)
-            yield x, y, label
+        label_attrname = len(self.attrnames) > 1
+        label_sender = len(self._senders(run_data)) > 1
+
+        for attrname in self.attrnames:
+            for i in self._senders(run_data):
+                x, y = run_data.get_time_data(i, attrname)
+                label = pretty(attrname) if label_attrname else "sender"
+                if label_sender:
+                    label += " {:d}".format(i)
+                yield x, y, label
 
     def generate_plot(self, run_data):
         super(TimePlotGenerator, self).generate_plot(run_data)
@@ -339,19 +370,16 @@ class TimePlotGenerator(TimePlotMixin, BasePlotGenerator):
             sender = self.senders[0]
             self.plot_whisker_change_times(self.ax, run_data, sender)
 
-            if self.attrname in datautils.RunData.MEMORY_ATTRIBUTES:
+            if len(self.attrnames) == 1 and self.attrnames[0] in datautils.RunData.MEMORY_ATTRIBUTES:
                 ylim = self.ax.get_ylim()
-                self.plot_whisker_bounds(self.ax, run_data, sender, self.attrname)
+                self.plot_whisker_bounds(self.ax, run_data, sender, self.attrnames[0])
                 self.ax.set_ylim(ylim)
 
 
 class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
     """Class to generate plots with two y-axis scales."""
-    # TODO Separate two-scales plot functionality from time retrieval of
-    # data.
 
-    color1 = 'b'
-    color2 = 'r'
+    colors = ['b', 'r']
 
     def __init__(self, spec1, spec2, **kwargs):
         self.figfilename = "{attr1}_{index1:d}__{attr2}_{index2:d}".format(
@@ -374,18 +402,18 @@ class TwoScalesTimePlotGenerator(TimePlotMixin, BasePlotGenerator):
         min_t = min(t1 + t2)
         max_t = max(t1 + t2)
 
-        ax1.plot(t1, y1, color=self.color1)
+        ax1.plot(t1, y1, color=self.colors[0], **self.get_plot_kwargs(0))
         ax1.set_xlabel('Time (s)')
-        ax1.set_ylabel(self.title1, color=self.color1)
+        ax1.set_ylabel(self.title1, color=self.colors[0])
         for tl in ax1.get_yticklabels():
-            tl.set_color(self.color1)
+            tl.set_color(self.colors[0])
         ax1.set_xlim([min_t, max_t])
 
         ax2 = ax1.twinx()
-        ax2.plot(t2, y2, color=self.color2)
-        ax2.set_ylabel(self.title2, color=self.color2)
+        ax2.plot(t2, y2, color=self.colors[1], **self.get_plot_kwargs(1))
+        ax2.set_ylabel(self.title2, color=self.colors[1])
         for tl in ax2.get_yticklabels():
-            tl.set_color(self.color2)
+            tl.set_color(self.colors[1])
         ax2.set_xlim([min_t, max_t])
 
         if self._overlay_whiskers:
@@ -495,10 +523,6 @@ senderrunner_group.add_argument("-p", "--link-ppt", type=float, default=3.162277
     help="Link speed (packets per millisecond)")
 senderrunner_group.add_argument("-t", "--delay", type=float, default=150.0,
     help="Delay (milliseconds)")
-senderrunner_group.add_argument("-q", "--mean-on", type=float, default=1000.0,
-    help="Mean on duration (milliseconds)")
-senderrunner_group.add_argument("-w", "--mean-off", type=float, default=1000.0,
-    help="Mean off duration (milliseconds)")
 senderrunner_group.add_argument("-b", "--buffer-size", type=str, default="inf",
     help="Buffer size, a number or 'inf' for infinite buffers")
 senderrunner_group.add_argument("-i", "--interval", type=float, default=0.1,
@@ -522,13 +546,14 @@ data = datautils.read_data_file(args.inputfile)
 
 # If there's nothing in it, it was probably a RemyCC
 if not data.run_data:
-    parameter_keys = ["nsenders", "link_ppt", "delay", "mean_on", "mean_off", "buffer_size", "interval", "sim_time"]
+    parameter_keys = ["nsenders", "link_ppt", "delay", "buffer_size", "interval", "sim_time"]
     parameters = {key: getattr(args, key) for key in parameter_keys}
     datafile = args.inputfile + ".data"
+    parameters["datafile"] = datafile
     outfile = args.inputfile + ".out"
-    print("Running sender-runner to produce " + datafile)
-    runner = SenderRunnerRunner(**parameters)
-    runner.run(args.inputfile, datafile=datafile, outfile=outfile)
+    print("Running sender-logger to produce " + datafile)
+    runner = SenderLoggerRunner(**parameters)
+    runner.run(args.inputfile, outfile=outfile)
     data = datautils.read_data_file(datafile)
 
 plotsdir = make_plots_dir(args.plots_dir, args.inputfile)
@@ -544,25 +569,25 @@ generators = []
 if not args.animations_only:
     generators.extend([
         TimePlotGenerator("average_throughput"),
-        TimePlotGenerator("average_delay", "ms"),
-        TimePlotGenerator("sending_duration", "ms"),
-        TimePlotGenerator("packets_received", senders=(0,)),
-        TimePlotGenerator("packets_sent", senders=(0,)),
-        TimePlotGenerator("packets_in_flight", senders=(0,)),
-        TimePlotGenerator("packets_received", senders=(1,)),
-        TimePlotGenerator("packets_sent", senders=(1,)),
-        TimePlotGenerator("packets_in_flight", senders=(1,)),
-        TimePlotGenerator("total_delay", "ms"),
+        TimePlotGenerator("average_delay", unit="ms"),
+        TimePlotGenerator("sending_duration", unit="ms"),
+        TimePlotGenerator("packets_received", senders=0),
+        TimePlotGenerator("packets_sent", senders=0),
+        TimePlotGenerator("packets_in_flight", senders=0),
+        TimePlotGenerator("packets_received", senders=1),
+        TimePlotGenerator("packets_sent", senders=1),
+        TimePlotGenerator("packets_in_flight", senders=1),
+        TimePlotGenerator("total_delay", unit="ms"),
         TimePlotGenerator("window_size"),
-        TimePlotGenerator("intersend_time", "ms"),
-        TimePlotGenerator("rec_send_ewma", "ms", senders=(0,)),
-        TimePlotGenerator("rec_rec_ewma", "ms", senders=(0,)),
-        TimePlotGenerator("rtt_ratio", "ms", senders=(0,)),
-        TimePlotGenerator("slow_rec_rec_ewma", "ms", senders=(0,)),
-        TimePlotGenerator("rec_send_ewma", "ms", senders=(1,)),
-        TimePlotGenerator("rec_rec_ewma", "ms", senders=(1,)),
-        TimePlotGenerator("rtt_ratio", "ms", senders=(1,)),
-        TimePlotGenerator("slow_rec_rec_ewma", "ms", senders=(1,)),
+        TimePlotGenerator("intersend_time", unit="ms"),
+        TimePlotGenerator("rec_send_ewma", unit="ms", senders=0),
+        TimePlotGenerator("rec_rec_ewma", unit="ms", senders=0),
+        TimePlotGenerator("rtt_ratio", unit="ms", senders=0),
+        TimePlotGenerator("slow_rec_rec_ewma", unit="ms", senders=0),
+        TimePlotGenerator("rec_send_ewma", unit="ms", senders=1),
+        TimePlotGenerator("rec_rec_ewma", unit="ms", senders=1),
+        TimePlotGenerator("rtt_ratio", unit="ms", senders=1),
+        TimePlotGenerator("slow_rec_rec_ewma", unit="ms", senders=1),
         TimePlotGenerator("sending"),
         TimePlotGenerator("window_increment"),
         TimePlotGenerator("window_multiple"),
@@ -573,6 +598,8 @@ if not args.animations_only:
         TimePlotGenerator("send_times", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
         TimePlotGenerator("actual_interreceive", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
         TimePlotGenerator("actual_intersend", plot_kwargs={'linestyle': 'None', 'marker': 'x'}),
+        TimePlotGenerator("actual_intersend", "intersend", senders=0, plot_kwargs=[{'linestyle': 'None', 'marker': 'x'}, {}]),
+        TimePlotGenerator("actual_intersend", "intersend_time", senders=0, plot_kwargs=[{'linestyle': 'None', 'marker': 'x'}, {}]),
         SenderVersusSenderPlotGenerator("window_size", (0, 1)),
         SenderVersusSenderPlotGenerator("intersend_time", (0, 1)),
         SenderVersusSenderPlotGenerator("rec_send_ewma", (0, 1)),
