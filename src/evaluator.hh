@@ -7,7 +7,6 @@
 #include "random.hh"
 #include "whiskertree.hh"
 #include "fintree.hh"
-#include "simulationresults.hh"
 #include "network.hh"
 #include "problem.pb.h"
 #include "answer.pb.h"
@@ -16,7 +15,6 @@ template <typename T>
 class Evaluator
 {
 public:
-
   class Outcome
   {
   public:
@@ -24,7 +22,7 @@ public:
     std::vector< std::pair< NetConfig, std::vector< std::pair< double, double > > > > throughputs_delays;
     T used_actions;
 
-    Outcome( T actions ) : score( 0 ), throughputs_delays(), used_actions( actions ) {}
+    Outcome() : score( 0 ), throughputs_delays(), used_actions() {}
 
     Outcome( const AnswerBuffers::Outcome & dna );
 
@@ -41,12 +39,12 @@ private:
 
 public:
   Evaluator( const ConfigRange & range );
-
+  
   ProblemBuffers::Problem DNA( const T & actions ) const;
 
   Outcome score( T & run_actions,
-		 const bool trace = false,
-		 const double carefulness = 1 ) const;
+		const bool trace = false,
+		const double carefulness = 1) const;
 
   static Evaluator::Outcome parse_problem_and_evaluate( const ProblemBuffers::Problem & problem );
 

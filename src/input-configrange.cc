@@ -12,13 +12,11 @@
 #include "dna.pb.h"
 using namespace std;
 
-/*
- * Parses input arguments, create range protobuf for specific parameter.
- * If mandatory is false and no input arguments are found, skips and returns false.
- * If the input arugments are invalid, or if mandatory is true and no input arguments
- * are found, calls exit(1).
- * If all input arguments were found, updates the range and returns true.
- */
+// Parses input arguments, create range protobuf for specific parameter.
+// If mandatory is false and no input arguments are found, skips and returns false.
+// If the input arugments are invalid, or if mandatory is true and no input arguments
+// are found, calls exit(1).
+// If all input arguments were found, updates the range and returns true.
 bool update_config_with_range(RemyBuffers::Range * range, int argc,
     char *argv[], string arg_name, bool mandatory) {
 
@@ -76,42 +74,24 @@ bool update_config_with_range(RemyBuffers::Range * range, int argc,
   return true;
 }
 
-/*
- * An attempt to create generic str_to_numeric functions so that the template
- * function update_config_with_value() has something to call.
- */
-
-template <typename Type>
-Type str_to_numeric(const string& str) { return ""; }
-
-template <>
-unsigned int str_to_numeric(const string& str) { return stoul(str); }
-
-template <>
-float str_to_numeric(const string& str) { return stof(str); }
-
-/*
- * Parses input arguments, sets a uint32 field.
- * If mandatory is false and no input arguments are found, skips and returns false.
- * If the input arugments are invalid, or if mandatory is true and no input arguments
- * are found, calls exit(1).
- * If all input arguments were found, updates the range and returns true.
- */
-template <typename Type>
-bool update_config_with_value(RemyBuffers::ConfigRange & range,
-    void (RemyBuffers::ConfigRange::*set_fn)(Type),
-    int argc, char *argv[],
+// Parses input arguments, sets a uint32 field.
+// If mandatory is false and no input arguments are found, skips and returns false.
+// If the input arugments are invalid, or if mandatory is true and no input arguments
+// are found, calls exit(1).
+// If all input arguments were found, updates the range and returns true.
+bool update_config_with_uint32(RemyBuffers::ConfigRange & range,
+    void (RemyBuffers::ConfigRange::*set_fn)(unsigned int), int argc, char *argv[],
     string arg_name, bool mandatory) {
 
   bool found = false;
-  Type value = -1;
+  unsigned int value = -1;
   int arg_name_size = arg_name.size();
   for ( int i = 1; i < argc; i++ ) {
     string arg( argv[i] );
     if ( arg.substr( 0, arg_name_size+1 ) == arg_name + "=" ) {
       found = true;
       try {
-        value = str_to_numeric<Type>( arg.substr( arg_name_size+1 ) );
+        value = stoul( arg.substr( arg_name_size+1 ) );
       } catch ( invalid_argument ) {
         fprintf( stderr, "Could not parse %s argument: %s", arg_name.c_str(), arg.c_str() );
         exit(1);
@@ -124,7 +104,7 @@ bool update_config_with_value(RemyBuffers::ConfigRange & range,
     exit(1);
   }
   if ( found ) {
-    fprintf( stderr, "Setting %s to %s\n", arg_name.c_str(), to_string(value).c_str() );
+    fprintf( stderr, "Setting %s to %u\n", arg_name.c_str(), value );
     (range.*set_fn)(value);
     return true;
   }
@@ -148,7 +128,7 @@ int main(int argc, char *argv[]) {
     }
     if ( arg == "inf_buffers") {
       infinite_buffers = true;
-    }
+    } 
   }
 
   if (output_filename.empty()) {
@@ -180,8 +160,7 @@ int main(int argc, char *argv[]) {
   update_config_with_range(input_config.mutable_mean_on_duration(), argc, argv, "on", mandatory);
   update_config_with_range(input_config.mutable_mean_off_duration(), argc, argv, "off", mandatory);
 
-  update_config_with_value(input_config, &RemyBuffers::ConfigRange::set_simulation_ticks,
-      argc, argv, "ticks", mandatory);
+  update_config_with_uint32(input_config, &RemyBuffers::ConfigRange::set_simulation_ticks, argc, argv, "ticks", mandatory);
 
   if ( !(infinite_buffers) ) {
     update_config_with_range(input_config.mutable_buffer_size(), argc, argv, "buf_size", mandatory);
@@ -193,7 +172,7 @@ int main(int argc, char *argv[]) {
     input_config.mutable_buffer_size()->CopyFrom(buffer_size);
   }
 
-
+   
 
   // write to file
   char of[ 128 ];
@@ -203,7 +182,7 @@ int main(int argc, char *argv[]) {
     perror( "open" );
     exit( 1 );
   }
-
+  
 
   if ( not input_config.SerializeToFileDescriptor( fd ) ) {
     fprintf( stderr, "Could not serialize InputConfig parameters.\n" );

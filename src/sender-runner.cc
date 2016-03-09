@@ -2,7 +2,6 @@
 #include <vector>
 #include <string>
 #include <limits>
-#include <fstream>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -13,7 +12,7 @@
 using namespace std;
 
 template <typename T>
-void print_tree(T & tree) 
+void print_tree(T & tree)
 {
   if ( tree.has_config() ) {
     printf( "Prior assumptions:\n%s\n\n", tree.config().DebugString().c_str() );
@@ -25,7 +24,7 @@ void print_tree(T & tree)
 }
 
 template <typename T>
-void parse_outcome( T & outcome ) 
+void parse_outcome( T & outcome )
 {
   printf( "score = %f\n", outcome.score );
   double norm_score = 0;
@@ -53,9 +52,8 @@ int main( int argc, char *argv[] )
   double delay = 100.0;
   double mean_on_duration = 5000.0;
   double mean_off_duration = 5000.0;
-  unsigned int simulation_ticks = 1000000;
   double buffer_size = numeric_limits<unsigned int>::max();
-  string datafilename;
+  unsigned int simulation_ticks = 1000000;
 
   for ( int i = 1; i < argc; i++ ) {
     string arg( argv[ i ] );
@@ -87,7 +85,7 @@ int main( int argc, char *argv[] )
           fprintf( stderr, "Could not parse %s.\n", filename.c_str() );
           exit( 1 );
         }
-        whiskers = WhiskerTree( tree );  
+        whiskers = WhiskerTree( tree );
         print_tree< RemyBuffers::WhiskerTree >(tree);
       }
 
@@ -119,9 +117,6 @@ int main( int argc, char *argv[] )
       } else {
         buffer_size = atoi( arg.substr( 4 ).c_str() );
       }
-    } else if ( arg.substr( 0, 9 ) == "datafile=" ) {
-      datafilename = arg.substr( 9 );
-      fprintf( stderr, "Will write simulation data to %s\n", datafilename.c_str() );
     }
   }
 
@@ -136,11 +131,11 @@ int main( int argc, char *argv[] )
 
   if ( is_poisson ) {
     Evaluator< FinTree > eval( configuration_range );
-    auto outcome = eval.score( fins, false, 1 );
+    auto outcome = eval.score( fins, false, 10 );
     parse_outcome< Evaluator< FinTree >::Outcome > ( outcome );
   } else {
     Evaluator< WhiskerTree > eval( configuration_range );
-    auto outcome = eval.score( whiskers, false, 1 );
+    auto outcome = eval.score( whiskers, false, 10 );
     parse_outcome< Evaluator< WhiskerTree >::Outcome > ( outcome );
   }
 
