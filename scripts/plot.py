@@ -19,7 +19,7 @@ from math import log2
 from warnings import warn
 from itertools import chain
 
-from senderrunner_runner import SenderRunnerRunner
+from remy_tool_runner import SenderRunnerRunner
 import utils
 
 use_color = True
@@ -28,6 +28,7 @@ LAST_RESULTS_SYMLINK = "last"
 
 REMYCCSPEC_REGEX = re.compile("^([\w/]+)\.\{(\d+)\:(\d+)(?:\:(\d+))?\}$")
 LINK_PPT_TO_MBPS_CONVERSION = 10
+
 
 class BaseRemyCCPerformancePlotGenerator:
     """Base class for generating and plotting data for a RemyCC.
@@ -75,6 +76,7 @@ class BaseRemyCCPerformancePlotGenerator:
             data_filename = "data-{remycc}.csv".format(
                     remycc=os.path.basename(remyccfilename))
             data_file = open(os.path.join(self.data_dir, data_filename), "w")
+            return data_file
         else:
             return None
 
@@ -177,6 +179,9 @@ class SenderRunnerRemyCCPerformancePlotGenerator(SenderRunnerFilesMixin, BaseRem
     """
 
     def __init__(self, link_ppt_range, parameters, **kwargs):
+        senderrunnercmd = kwargs.pop("senderrunnercmd")
+        if senderrunnercmd is not None:
+            parameters["command"] = senderrunnercmd
         self.senderrunner = SenderRunnerRunner(**parameters)
         self.console_dir = kwargs.pop("console_dir", None)
         super(SenderRunnerRemyCCPerformancePlotGenerator, self).__init__(link_ppt_range, **kwargs)
@@ -247,6 +252,7 @@ def plot_from_original_file(datafilename, axes):
             row = [float(x) for x in row]
             link_speeds.append(row[0])
             norm_score = log2(row[1]/row[0]) - log2(row[2]/150)
+            norm_score -= log2(0.75) # reverse the reversal of the equal-share normalization
             norm_scores.append(norm_score)
         datafile.close()
         add_plot(axes, link_speeds, norm_scores, label=datafilename)
@@ -284,6 +290,8 @@ def make_results_dir(dirname):
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("remycc", nargs="*", type=str,
     help="RemyCC file(s) to run, can also use e.g. name.[5:5:30] to do name.5, name.10, ..., name.30")
+parser.add_argument("--sender", type=str, default="",
+    help="Indicate that we are running poisson senders. ")
 parser.add_argument("-R", "--replot", type=str, action="append", default=[],
     help="Replot results in this directory from output files (can be specified multiple times)")
 parser.add_argument("-n", "--num-points", type=int, default=1000,
@@ -296,6 +304,8 @@ parser.add_argument("--no-console-output-files", action="store_false", default=T
     help="Don't generate console output files")
 parser.add_argument("--originals", type=str, default="originals",
     help="Directory in which to look for original data files to add to plot.")
+parser.add_argument("--sender-runner", type=str, default=None,
+    help="sender-runner executable location, defaults to ../src/sender-runner")
 senderrunner_group = parser.add_argument_group("sender-runner arguments")
 senderrunner_group.add_argument("-s", "--nsenders", type=int, default=2,
     help="Number of senders")
@@ -333,7 +343,7 @@ utils.log_arguments(results_dirname, args)
 
 # Generate parameters
 link_ppt_range = np.logspace(np.log10(args.link_ppt[0]), np.log10(args.link_ppt[1]), args.num_points)
-parameter_keys = ["nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
+parameter_keys = ["sender", "nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
 parameters = {key: getattr(args, key) for key in parameter_keys}
 remyccfiles = generate_remyccs_list(args.remycc)
 
@@ -341,7 +351,7 @@ ax = plt.axes()
 
 # Generate data and plots (the main part)
 generator = SenderRunnerRemyCCPerformancePlotGenerator(link_ppt_range, parameters,
-        console_dir=console_dirname, data_dir=data_dirname, axes=ax)
+        console_dir=console_dirname, data_dir=data_dirname, axes=ax, senderrunnercmd=args.sender_runner)
 for remyccfile in remyccfiles:
     generator.generate(remyccfile)
 link_ppt_priors = generator.get_link_ppt_priors()

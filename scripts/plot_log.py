@@ -133,7 +133,6 @@ class BasePlotGenerator(BaseFigureGenerator):
 class BaseAnimationGenerator(BaseFigureGenerator):
     """Abstract base class to generate timed animations."""
 
-    interval = 1
     history = 20
     file_extension = 'mp4'
     dpi = 200
@@ -142,7 +141,6 @@ class BaseAnimationGenerator(BaseFigureGenerator):
             'marker': '.', 'markersize': 12.0, 'markerfacecolor': 'blue', 'markeredgecolor': 'blue'}
 
     def __init__(self, **kwargs):
-        self._interval = kwargs.pop('interval', self.interval)
         super(BaseAnimationGenerator, self).__init__(**kwargs)
 
     def animate(self, i):
@@ -155,7 +153,7 @@ class BaseAnimationGenerator(BaseFigureGenerator):
         self.fig = plt.figure()
         self.initial(run_data)
         anim = FuncAnimation(self._fig, self.animate, frames=len(self._times),
-            interval=self._interval)
+            interval=run_data.log_interval_ticks)
         anim.save(self.get_figfilename(), dpi=self.dpi)
         plt.close(self.fig)
 
@@ -561,7 +559,6 @@ BaseFigureGenerator.plotsdir = plotsdir
 BaseFigureGenerator.start_time = args.start_time
 utils.log_arguments(plotsdir, args)
 
-BaseAnimationGenerator.interval = data.settings.log_interval_ticks
 TimePlotMixin.overlay_whiskers = args.whiskers_overlay
 
 generators = []
