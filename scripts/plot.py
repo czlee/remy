@@ -321,7 +321,7 @@ parser.add_argument("--newlines", action="store_const", dest="progress_end_char"
 senderrunner_group = parser.add_argument_group("sender-runner arguments")
 senderrunner_group.add_argument("-s", "--nsenders", type=int, default=2,
     help="Number of senders")
-senderrunner_group.add_argument("-d", "--delay", type=float, default=150.0,
+senderrunner_group.add_argument("-d", "--delay", nargs='+', type=float, default=[150.0],
     help="Delay (milliseconds)")
 senderrunner_group.add_argument("-q", "--mean-on", type=float, default=1000.0,
     help="Mean on duration (milliseconds)")
@@ -364,19 +364,22 @@ utils.log_arguments(results_dirname, args)
 
 # Generate parameters
 link_ppt_range = np.logspace(np.log10(args.link_ppt[0]), np.log10(args.link_ppt[1]), args.num_points)
-parameter_keys = ["nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
+parameter_keys = ["nsenders", "mean_on", "mean_off", "buffer_size"]
 parameters = {key: getattr(args, key) for key in parameter_keys}
 remyccfiles_and_types = generate_remyccs_list(args.remycc, args.sender)
 
 ax = plt.axes()
+link_ppt_priors = []
 
 # Generate data and plots (the main part)
-generator = SenderRunnerRemyCCPerformancePlotGenerator(link_ppt_range, parameters,
-        console_dir=console_dirname, data_dir=data_dirname, axes=ax, senderrunnercmd=args.sender_runner,
-        progress_end_char=args.progress_end_char)
-for remyccfile, sender_type in remyccfiles_and_types:
-    generator.generate(remyccfile, sender=sender_type)
-link_ppt_priors = generator.get_link_ppt_priors()
+for delay in args.delay:
+    parameters["delay"] = delay
+    generator = SenderRunnerRemyCCPerformancePlotGenerator(link_ppt_range, parameters,
+            console_dir=console_dirname, data_dir=data_dirname, axes=ax, senderrunnercmd=args.sender_runner,
+            progress_end_char=args.progress_end_char, link_ppt_priors=link_ppt_priors)
+    for remyccfile, sender_type in remyccfiles_and_types:
+        generator.generate(remyccfile, label="{} delay={}".format(remyccfile, delay), sender=sender_type)
+    link_ppt_priors = generator.get_link_ppt_priors()
 
 # Generate replots
 for replot_dir in args.replot:
