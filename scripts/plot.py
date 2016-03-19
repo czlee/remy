@@ -81,7 +81,7 @@ class BaseRemyCCPerformancePlotGenerator:
         else:
             return None
 
-    def generate(self, remyccfilename):
+    def generate(self, remyccfilename, label=None, **parameters):
         data_file = self.get_data_file(remyccfilename)
         if data_file:
             data_csv = csv.writer(data_file)
@@ -93,7 +93,7 @@ class BaseRemyCCPerformancePlotGenerator:
             print("\033[KGenerating score for if={:s}, link={:f} ({:d} of {:d})...".format(
                         remyccfilename, link_ppt, i, npoints),
                         file=sys.stderr, end=self._progress_end_char, flush=True)
-            norm_score, sender_data, link_ppt_prior = self.get_statistics(remyccfilename, link_ppt)
+            norm_score, sender_data, link_ppt_prior = self.get_statistics(remyccfilename, link_ppt, **parameters)
             norm_scores.append(norm_score)
             sender_numbers = chain(*sender_data)
             if data_file:
@@ -107,7 +107,7 @@ class BaseRemyCCPerformancePlotGenerator:
             print("\033[KPlotting for file {}...".format(remyccfilename), file=sys.stderr,
                     end=self._progress_end_char, flush=True)
             link_speeds = [LINK_PPT_TO_MBPS_CONVERSION*l for l in link_ppt_range]
-            add_plot(self.axes, link_speeds, norm_scores, label=remyccfilename)
+            add_plot(self.axes, link_speeds, norm_scores, label=label or remyccfilename)
 
         print("\033[KDone file {}.".format(remyccfilename), file=sys.stderr)
         sys.stderr.flush()
@@ -188,12 +188,13 @@ class SenderRunnerRemyCCPerformancePlotGenerator(SenderRunnerFilesMixin, BaseRem
         self.console_dir = kwargs.pop("console_dir", None)
         super(SenderRunnerRemyCCPerformancePlotGenerator, self).__init__(link_ppt_range, **kwargs)
 
-    def get_statistics(self, remyccfilename, link_ppt):
+    def get_statistics(self, remyccfilename, link_ppt, **parameters):
         """Runs sender-runner on the given RemyCC `remyccfilename` and with the given
         parameters, and returns the normalized score and sender throughputs and delays.
         """
         outfile = self.get_console_filename(remyccfilename, link_ppt)
-        output = self.senderrunner.run(remyccfilename, {'link_ppt': link_ppt}, outfile=outfile)
+        parameters['link_ppt'] = link_ppt
+        output = self.senderrunner.run(remyccfilename, parameters, outfile=outfile)
         return self.parse_senderrunner_output(output)
 
 
@@ -261,16 +262,21 @@ def plot_from_original_file(datafilename, axes):
     except (IOError, ValueError) as e:
         print("Error plotting from {}: {}".format(datafilename, e), file=sys.stderr)
 
-def generate_remyccs_list(specs):
+def generate_remyccs_list(specs, sender_types):
     """Returns a list of RemyCC files, for example:
         ["myremycc.5"] -> ["myremycc.5"]
         ["myremycc.[3:3:9]"] -> ["myremycc.3", "myremycc.6", "myremycc.9"]
     """
     result = []
-    for spec in specs:
+    if len(sender_types) == 1:
+        sender_types = sender_types * len(specs)
+    if len(sender_types) != len(specs):
+        raise ValueError("There must be as many sender types as there are RemyCC specs.")
+
+    for spec, sender_type in zip(specs, sender_types):
         match = REMYCCSPEC_REGEX.match(spec)
         if not match:
-            result.append(spec)
+            result.append((spec, sender_type))
         else:
             name = match.group(1)
             start = int(match.group(2))
@@ -280,7 +286,7 @@ def generate_remyccs_list(specs):
             else:
                 stop = int(match.group(4))
                 step = int(match.group(3))
-            result.extend("{name}.{index:d}".format(name=name, index=index) for index in range(start, stop+1, step))
+            result.extend(("{name}.{index:d}".format(name=name, index=index), sender_type) for index in range(start, stop+1, step))
     return result
 
 def make_results_dir(dirname):
@@ -292,8 +298,8 @@ def make_results_dir(dirname):
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("remycc", nargs="*", type=str,
     help="RemyCC file(s) to run, can also use e.g. name.[5:5:30] to do name.5, name.10, ..., name.30")
-parser.add_argument("--sender", type=str, default="",
-    help="Indicate that we are running poisson senders. ")
+parser.add_argument("--sender", type=str, nargs='+', default=["rat"], choices=('poisson', 'rat'),
+    help="Sender type, use one for each remycc.")
 parser.add_argument("-R", "--replot", type=str, action="append", default=[],
     help="Replot results in this directory from output files (can be specified multiple times)")
 parser.add_argument("-n", "--num-points", type=int, default=1000,
@@ -354,9 +360,9 @@ utils.log_arguments(results_dirname, args)
 
 # Generate parameters
 link_ppt_range = np.logspace(np.log10(args.link_ppt[0]), np.log10(args.link_ppt[1]), args.num_points)
-parameter_keys = ["sender", "nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
+parameter_keys = ["nsenders", "delay", "mean_on", "mean_off", "buffer_size"]
 parameters = {key: getattr(args, key) for key in parameter_keys}
-remyccfiles = generate_remyccs_list(args.remycc)
+remyccfiles_and_types = generate_remyccs_list(args.remycc, args.sender)
 
 ax = plt.axes()
 
@@ -364,8 +370,8 @@ ax = plt.axes()
 generator = SenderRunnerRemyCCPerformancePlotGenerator(link_ppt_range, parameters,
         console_dir=console_dirname, data_dir=data_dirname, axes=ax, senderrunnercmd=args.sender_runner,
         progress_end_char=args.progress_end_char)
-for remyccfile in remyccfiles:
-    generator.generate(remyccfile)
+for remyccfile, sender_type in remyccfiles_and_types:
+    generator.generate(remyccfile, sender=sender_type)
 link_ppt_priors = generator.get_link_ppt_priors()
 
 # Generate replots
