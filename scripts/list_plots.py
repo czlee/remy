@@ -43,8 +43,14 @@ for entry in entries:
         continue
     argsfile.close()
     git_dict = jsondict.get("git", {})
-    git_branch = git_dict.get("branch", "<unknown>")
-    git_commit = git_dict.get("commit", "<unknown>")[:9]
+    if "describe" in git_dict:
+        git_describe = git_dict.get("describe")
+    elif "commit" in git_dict or "branch" in git_dict:
+        git_commit = git_dict.get("commit", "<unknown>")[:7]
+        git_branch = git_dict.get("branch", "<unknown>")
+        git_describe = git_branch + "/" + git_commit
+    else:
+        git_describe = "<unknown>"
     args_dict = jsondict.get("args", {})
     remyccs = args_dict.get("remycc", [])
     remyccs = " ".join([os.path.basename(r) for r in remyccs])
@@ -78,6 +84,6 @@ for entry in entries:
     plotsdirname = os.path.join(dirname, "plots")
     noplots = "[no plots] " if os.path.isdir(plotsdirname) and len(os.listdir(plotsdirname)) == 0 else ""
 
-    print("{dirname:30} {branch:14} {commit:9} {npoints:>5} {noplots}{remyccs}{replots}".format(
-        dirname=dirname, branch=git_branch, commit=git_commit, npoints=npoints,
+    print("{dirname:30} {describe:24} {npoints:>5} {noplots}{remyccs}{replots}".format(
+        dirname=dirname, describe=git_describe, npoints=npoints,
         remyccs=remyccs, noplots=noplots, replots=replots_str))
