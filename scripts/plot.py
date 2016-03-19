@@ -312,6 +312,8 @@ parser.add_argument("--sender-runner", type=str, default=None,
     help="sender-runner executable location, defaults to ../src/sender-runner")
 parser.add_argument("--newlines", action="store_const", dest="progress_end_char", const='\n', default='\r',
     help="Print newlines (\\n) instead of carriage returns (\\r) when reporting progress")
+parser.add_argument("--title", type=str, default=None,
+    help="Title for plot")
 senderrunner_group = parser.add_argument_group("sender-runner arguments")
 senderrunner_group.add_argument("-s", "--nsenders", type=int, default=2,
     help="Number of senders")
@@ -397,7 +399,9 @@ elif len(link_ppt_priors) > 1:
 plot_filename = "link_ppt"
 ax.set_xlabel("link speed (Mbps)")
 ax.set_ylabel("normalized score")
-ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1))
+ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1))
+if args.title:
+    ax.set_title(args.title)
 plt.savefig(os.path.join(plots_dirname, "{:s}.png".format(plot_filename)), format="png", bbox_inches="tight")
 plt.savefig(os.path.join(plots_dirname, "{:s}.pdf".format(plot_filename)), format="pdf", bbox_inches="tight")
 plt.savefig(os.path.join(plots_dirname, "{:s}.svg".format(plot_filename)), format="svg", bbox_inches="tight")
