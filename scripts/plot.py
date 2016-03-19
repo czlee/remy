@@ -318,8 +318,6 @@ parser.add_argument("--sender-runner", type=str, default=None,
     help="sender-runner executable location, defaults to ../src/sender-runner")
 parser.add_argument("--newlines", action="store_const", dest="progress_end_char", const='\n', default='\r',
     help="Print newlines (\\n) instead of carriage returns (\\r) when reporting progress")
-parser.add_argument("--title", type=str, default=None,
-    help="Title for plot")
 senderrunner_group = parser.add_argument_group("sender-runner arguments")
 senderrunner_group.add_argument("-s", "--nsenders", type=int, default=2,
     help="Number of senders")
@@ -331,6 +329,12 @@ senderrunner_group.add_argument("-w", "--mean-off", type=float, default=1000.0,
     help="Mean off duration (milliseconds)")
 senderrunner_group.add_argument("-b", "--buffer-size", type=str, default="inf",
     help="Buffer size, a number or 'inf' for infinite buffers")
+plotting_group = parser.add_argument_group("plotting options")
+plotting_group.add_argument("--title", type=str, default=None,
+    help="Title for plot")
+plotting_group.add_argument("--ylim", type=float, nargs=2, default=None,
+    help="y-axis limits")
+
 args = parser.parse_args()
 
 # Sanity-check arguments, warn user say they can stop things early
@@ -408,6 +412,9 @@ ax.set_ylabel("normalized score")
 ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1))
 if args.title:
     ax.set_title(args.title)
+if args.ylim:
+    ax.set_ylim(args.ylim)
+ax.set_xlim([LINK_PPT_TO_MBPS_CONVERSION * x for x in args.link_ppt])
 plt.savefig(os.path.join(plots_dirname, "{:s}.png".format(plot_filename)), format="png", bbox_inches="tight")
 plt.savefig(os.path.join(plots_dirname, "{:s}.pdf".format(plot_filename)), format="pdf", bbox_inches="tight")
 plt.savefig(os.path.join(plots_dirname, "{:s}.svg".format(plot_filename)), format="svg", bbox_inches="tight")
