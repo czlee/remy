@@ -306,6 +306,8 @@ parser.add_argument("--no-console-output-files", action="store_false", default=T
     help="Don't generate console output files")
 parser.add_argument("--originals", type=str, default="originals",
     help="Directory in which to look for original data files to add to plot.")
+parser.add_argument("--no-originals", action="store_const", dest="originals", const=None,
+    help="Do not plot any original data files.")
 parser.add_argument("--sender-runner", type=str, default=None,
     help="sender-runner executable location, defaults to ../src/sender-runner")
 parser.add_argument("--newlines", action="store_const", dest="progress_end_char", const='\n', default='\r',
@@ -324,13 +326,16 @@ senderrunner_group.add_argument("-b", "--buffer-size", type=str, default="inf",
 args = parser.parse_args()
 
 # Sanity-check arguments, warn user say they can stop things early
-if not os.path.isdir(args.originals):
+if args.originals is not None and not os.path.isdir(args.originals):
     warn("The path {} is not a directory.".format(args.originals))
 for replot_dir in args.replot:
     if not os.path.isdir(replot_dir):
         warn("The path {} is not a directory.".format(replot_dir))
 if len(args.remycc) == 0 and len(args.replot) == 0:
-    warn("No RemyCC files specified, plotting only originals.")
+    if args.originals is not None:
+        warn("No RemyCC files specified, plotting only originals.")
+    else:
+        warn("No RemyCC files and no originals specified, nothing to plot")
 
 # Make directories
 results_dirname = make_results_dir(args.results_dir)
@@ -372,7 +377,7 @@ for replot_dir in args.replot:
     link_ppt_priors = generator.get_link_ppt_priors()
 
 # Generate original plots
-if os.path.isdir(args.originals):
+if args.originals is not None and os.path.isdir(args.originals):
     for filename in os.listdir(args.originals):
         path = os.path.join(args.originals, filename)
         if not os.path.isfile(path):
